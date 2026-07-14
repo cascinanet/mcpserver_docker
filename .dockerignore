@@ -1,0 +1,12 @@
+.git
+.gitignore
+.env
+data/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.log
+README.md
+PLESK.md

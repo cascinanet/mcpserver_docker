@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}MCP Hub{% endblock %}</title>
+  <style>
+    :root { --bg:#0f1115; --panel:#1a1d24; --border:#2a2f3a; --fg:#e6e9ef; --muted:#9aa3b2; --accent:#4f8cff; --danger:#ff5d5d; --ok:#3ddc97; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:var(--bg); color:var(--fg); }
+    header { display:flex; align-items:center; justify-content:space-between; padding:14px 24px; border-bottom:1px solid var(--border); background:var(--panel); }
+    header .brand { font-weight:700; letter-spacing:.3px; }
+    header nav a { color:var(--muted); text-decoration:none; margin-left:18px; }
+    header nav a:hover { color:var(--fg); }
+    main { max-width:960px; margin:32px auto; padding:0 20px; }
+    h1 { font-size:22px; margin:0 0 18px; }
+    .card { background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:18px 20px; margin-bottom:16px; }
+    .btn { display:inline-block; background:var(--accent); color:#fff; border:none; padding:9px 16px; border-radius:8px; cursor:pointer; text-decoration:none; font-size:14px; }
+    .btn.secondary { background:transparent; border:1px solid var(--border); color:var(--fg); }
+    .btn.danger { background:var(--danger); }
+    table { width:100%; border-collapse:collapse; }
+    th, td { text-align:left; padding:10px 8px; border-bottom:1px solid var(--border); font-size:14px; }
+    th { color:var(--muted); font-weight:600; }
+    label { display:block; font-size:13px; color:var(--muted); margin:12px 0 4px; }
+    input[type=text], input[type=password], textarea { width:100%; background:#0c0e12; border:1px solid var(--border); color:var(--fg); border-radius:8px; padding:9px 11px; font-size:14px; font-family:inherit; }
+    textarea { min-height:70px; resize:vertical; }
+    .pill { font-size:12px; padding:2px 8px; border-radius:999px; }
+    .pill.on { background:rgba(61,220,151,.15); color:var(--ok); }
+    .pill.off { background:rgba(154,163,178,.15); color:var(--muted); }
+    .error { background:rgba(255,93,93,.12); border:1px solid var(--danger); color:#ffb3b3; padding:10px 12px; border-radius:8px; margin-bottom:14px; font-size:14px; }
+    code { background:#0c0e12; padding:2px 6px; border-radius:6px; font-size:13px; }
+    .muted { color:var(--muted); font-size:13px; }
+  </style>
+</head>
+<body>
+  {% block header %}
+  <header>
+    <div class="brand">🛰️ MCP Hub</div>
+    <nav>
+      <a href="/">Dashboard</a>
+      <a href="/account/password">Password</a>
+      <a href="/logout">Esci</a>
+    </nav>
+  </header>
+  {% endblock %}
+  <main>{% block content %}{% endblock %}</main>
+</body>
+</html>

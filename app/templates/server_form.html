@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Modifica' if server else 'Nuovo' }} server — MCP Hub{% endblock %}
+{% block content %}
+<h1>{{ 'Modifica' if server else 'Nuovo' }} server MCP</h1>
+<div class="card">
+  {% if error %}<div class="error">{{ error }}</div>{% endif %}
+  <form method="post" action="/servers/save">
+
+    <label>Tipo di server</label>
+    <select name="type" id="type-select"
+            style="width:100%; background:#0c0e12; border:1px solid var(--border); color:var(--fg); border-radius:8px; padding:9px 11px; font-size:14px;">
+      {% set current_type = server.type if server else default_type %}
+      {% for t in server_types %}
+        <option value="{{ t.key }}" {{ 'selected' if t.key == current_type }}>{{ t.label }}</option>
+      {% endfor %}
+    </select>
+    <p class="muted" id="type-hint" style="margin:6px 0 0;"></p>
+
+    <label>ID (usato nell'URL, es. <code>analytics</code> → <code>/mcp/analytics/sse</code>)</label>
+    <input type="text" name="id" value="{{ server.id if server else '' }}"
+           {% if server %}readonly{% endif %} placeholder="es. cliente-rossi" required>
+
+    <label>Nome</label>
+    <input type="text" name="name" value="{{ server.name if server else '' }}"
+           placeholder="es. Cliente Rossi — Google Analytics" required>
+
+    <label>Descrizione</label>
+    <input type="text" name="description" value="{{ server.description if server else '' }}">
+
+    <!-- Sezione credenziali Google: visibile solo per i tipi che le richiedono -->
+    <div id="creds-section" style="display:none;">
+      <label>Credenziali service account Google (incolla qui il contenuto del file JSON)</label>
+      {% if server and server.has_credentials %}
+        <p class="muted" style="margin:2px 0 6px;">✅ Credenziali già caricate. Lascia vuoto per mantenerle, o incolla un nuovo JSON per sostituirle.</p>
+      {% endif %}
+      <textarea name="credentials_json" placeholder='{ "type": "service_account", "project_id": "...", ... }'
+                style="min-height:120px; font-family:monospace;"></textarea>
+    </div>
+
+    <!-- Sezione tecnica: comando/argomenti/env. Per i tipi predefiniti è collassata. -->
+    <details id="tech-section" {% if not server or server.type == 'custom' %}open{% endif %} style="margin-top:14px;">
+      <summary class="muted" style="cursor:pointer;">Impostazioni tecniche (comando, argomenti, env)</summary>
+      <div style="margin-top:10px;">
+        <label>Comando</label>
+        <input type="text" name="command" id="command-input" value="{{ server.command if server else '' }}" required>
+
+        <label>Argomenti (separati da spazio)</label>
+        <input type="text" name="args" id="args-input" value="{{ server.args | join(' ') if server else '' }}">
+
+        <label>Env extra (JSON)</label>
+        <textarea name="env" id="env-input">{{ server.env | tojson if server else '{}' }}</textarea>
+      </div>
+    </details>
+
+    <label>Auth token client (opzionale, richiesto ai client per connettersi all'SSE)</label>
+    <input type="text" name="auth_token" value="{{ server.auth_token or '' if server else '' }}">
+
+    <label style="display:flex; align-items:center; gap:8px; margin-top:14px;">
+      <input type="checkbox" name="enabled" value="true" {{ 'checked' if (server.enabled if server else True) }}>
+      Abilitato
+    </label>
+
+    <div style="margin-top:20px; display:flex; gap:10px;">
+      <button class="btn" type="submit">Salva</button>
+      <a class="btn secondary" href="/">Annulla</a>
+    </div>
+  </form>
+</div>
+
+<script>
+  const TYPES = {{ server_types | tojson }};
+  const isEdit = {{ 'true' if server else 'false' }};
+  const select = document.getElementById('type-select');
+  const hint = document.getElementById('type-hint');
+  const credsSection = document.getElementById('creds-section');
+  const cmd = document.getElementById('command-input');
+  const args = document.getElementById('args-input');
+  const envInput = document.getElementById('env-input');
+  const techSection = document.getElementById('tech-section');
+
+  function applyType(prefillTech) {
+    const t = TYPES.find(x => x.key === select.value);
+    if (!t) return;
+    hint.textContent = t.hint || t.description || '';
+    credsSection.style.display = (t.credential_kind === 'google_service_account') ? 'block' : 'none';
+    // Pre-compila comando/argomenti/env dal template solo quando si cambia tipo
+    // (non in modifica al primo caricamento, per non sovrascrivere i valori salvati).
+    if (prefillTech) {
+      cmd.value = t.command || '';
+      args.value = (t.args || []).join(' ');
+      envInput.value = JSON.stringify(t.env || {});
+      // Se il tipo richiede env (es. GSC_SITE_URL), apri la sezione tecnica per renderlo visibile.
+      if (techSection && Object.keys(t.env || {}).length > 0) techSection.open = true;
+    }
+  }
+
+  // Primo caricamento: in creazione pre-compila i campi tecnici dal tipo di default;
+  // in modifica lascia intatti i valori salvati.
+  applyType(!isEdit);
+  // Al cambio tipo: pre-compila i campi tecnici dal template scelto.
+  select.addEventListener('change', () => applyType(true));
+</script>
+{% endblock %}

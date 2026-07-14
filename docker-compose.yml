@@ -1,0 +1,18 @@
+services:
+  mcphub:
+    build: .
+    image: mcpserver_docker:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      - SECRET_KEY=${SECRET_KEY}
+      - DATA_DIR=/data
+      - SESSION_MAX_AGE=${SESSION_MAX_AGE:-28800}
+      - BOOTSTRAP_ADMIN_USERNAME=${BOOTSTRAP_ADMIN_USERNAME:-admin}
+      - BOOTSTRAP_ADMIN_PASSWORD=${BOOTSTRAP_ADMIN_PASSWORD:-admin}
+    volumes:
+      - mcphub_data:/data
+
+volumes:
+  mcphub_data:

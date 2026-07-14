@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.env
+*.log
+
+# Local runtime data (users, secrets, per-deploy config)
+/data/users.json
+/data/*.local.json
+/data/creds/
+/data/runtime.json
+/data/*.jsonl
+/data_test/
+credentials*.json
+*.pem

@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Login — MCP Hub{% endblock %}
+{% block header %}{% endblock %}
+{% block content %}
+<div style="max-width:360px; margin:80px auto;">
+  <h1 style="text-align:center;">🛰️ MCP Hub</h1>
+  <div class="card">
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+    <form method="post" action="/login">
+      <input type="hidden" name="next" value="{{ next }}">
+      <label>Username</label>
+      <input type="text" name="username" autofocus autocomplete="username">
+      <label>Password</label>
+      <input type="password" name="password" autocomplete="current-password">
+      <div style="margin-top:18px;">
+        <button class="btn" type="submit" style="width:100%;">Accedi</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

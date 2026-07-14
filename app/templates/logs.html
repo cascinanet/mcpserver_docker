@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Log — MCP Hub{% endblock %}
+{% block content %}
+<div style="display:flex; align-items:center; justify-content:space-between;">
+  <h1>Log diagnostici</h1>
+  <div style="display:flex; gap:10px; align-items:center;">
+    {% if logging_enabled %}<span class="pill on">logging attivo</span>{% else %}<span class="pill off">logging spento</span>{% endif %}
+    <form method="post" action="/logging/toggle" style="display:inline;">
+      <button class="btn {{ 'danger' if logging_enabled else '' }}" type="submit">{{ 'Disattiva' if logging_enabled else 'Attiva' }}</button>
+    </form>
+    <form method="post" action="/logging/clear" style="display:inline;" onsubmit="return confirm('Svuotare i log?');">
+      <button class="btn secondary" type="submit">Svuota</button>
+    </form>
+    <a class="btn secondary" href="/">Indietro</a>
+  </div>
+</div>
+
+<div class="card">
+  <strong>Richieste (reqlog) — ultime {{ reqlog|length }}</strong>
+  <div style="overflow-x:auto; margin-top:8px;">
+    <pre style="margin:0; font-size:12px; white-space:pre;">{% for line in reqlog %}{{ line }}
+{% endfor %}{% if not reqlog %}(vuoto){% endif %}</pre>
+  </div>
+</div>
+
+<div class="card">
+  <strong>Body richieste (bodylog) — ultime {{ bodylog|length }}</strong>
+  <div style="overflow-x:auto; margin-top:8px;">
+    <pre style="margin:0; font-size:12px; white-space:pre;">{% for line in bodylog %}{{ line }}
+{% endfor %}{% if not bodylog %}(vuoto){% endif %}</pre>
+  </div>
+</div>
+{% endblock %}

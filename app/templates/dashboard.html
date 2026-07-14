@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — MCP Hub{% endblock %}
+{% block content %}
+<div style="display:flex; align-items:center; justify-content:space-between;">
+  <h1>Server MCP</h1>
+  <a class="btn" href="/servers/new">+ Nuovo server</a>
+</div>
+
+<div class="card">
+  {% if servers %}
+  <div style="overflow-x:auto;">
+  <table>
+    <thead>
+      <tr><th>ID</th><th>Nome</th><th>Tipo</th><th>Comando</th><th>Stato</th><th>Endpoint SSE</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for s in servers %}
+      <tr>
+        <td><code>{{ s.id }}</code></td>
+        <td>{{ s.name }}<br><span class="muted">{{ s.description }}</span></td>
+        <td>{{ type_labels.get(s.type, s.type) }}</td>
+        <td><code>{{ s.command }} {{ s.args | join(' ') }}</code></td>
+        <td>
+          {% if s.enabled %}<span class="pill on">attivo</span>
+          {% else %}<span class="pill off">disabilitato</span>{% endif %}
+        </td>
+        <td><code>/mcp/{{ s.id }}/sse</code></td>
+        <td style="white-space:nowrap;">
+          <a class="btn secondary" href="/servers/{{ s.id }}/edit">Modifica</a>
+          <form method="post" action="/servers/{{ s.id }}/delete" style="display:inline;"
+                onsubmit="return confirm('Eliminare {{ s.id }}?');">
+            <button class="btn danger" type="submit">Elimina</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="muted">Nessun server configurato. Aggiungine uno per iniziare.</p>
+  {% endif %}
+</div>
+<div class="card" style="display:flex; align-items:center; justify-content:space-between;">
+  <div>
+    <strong>Logging diagnostico richieste</strong><br>
+    <span class="muted">Registra le richieste in arrivo (utile per debug client MCP). Tienilo spento in uso normale.</span>
+  </div>
+  <div style="display:flex; align-items:center; gap:12px; white-space:nowrap;">
+    {% if logging_enabled %}<span class="pill on">attivo</span>{% else %}<span class="pill off">spento</span>{% endif %}
+    <form method="post" action="/logging/toggle" style="display:inline;">
+      <button class="btn {{ 'danger' if logging_enabled else '' }}" type="submit">
+        {{ 'Disattiva' if logging_enabled else 'Attiva' }}
+      </button>
+    </form>
+    <a class="btn secondary" href="/logs">Vedi log</a>
+  </div>
+</div>
+
+<p class="muted">Connesso come <strong>{{ user }}</strong>.</p>
+{% endblock %}
