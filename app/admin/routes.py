@@ -21,12 +21,21 @@ router = APIRouter(tags=["admin"], dependencies=[Depends(require_login)])
 
 
 def _form_context(request: Request, user: str, server: MCPServer | None, error: str | None = None) -> dict:
+    # Sostituisce il placeholder <DATA_DIR> nei template del catalogo (es. percorso DB sqlite)
+    # con la cartella dati reale di questo deployment, così il form pre-compila un percorso
+    # che vive davvero sul disco/volume persistente (Lightsail, Azure, Docker hanno DATA_DIR diversi).
+    sqlite_path = str(get_settings().sqlite_dir / "database.db")
+    server_types = []
+    for t in catalog.SERVER_TYPES:
+        data = t.model_dump()
+        data["args"] = [a.replace("<DATA_DIR>/db/database.db", sqlite_path) for a in data["args"]]
+        server_types.append(data)
     return {
         "request": request,
         "user": user,
         "server": server,
         "error": error,
-        "server_types": [t.model_dump() for t in catalog.SERVER_TYPES],
+        "server_types": server_types,
         "default_type": catalog.default_type().key,
     }
 

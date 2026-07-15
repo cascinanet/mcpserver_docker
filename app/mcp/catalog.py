@@ -56,10 +56,14 @@ SERVER_TYPES: list[ServerType] = [
         label="SQLite (database)",
         description="Piccolo database SQLite gestito da Claude (query, tabelle, insert).",
         command="mcp-server-sqlite",
-        args=["--db-path", "/opt/mcphub/data/db/database.db"],
+        # Il percorso reale (sotto DATA_DIR, per restare sul disco/volume persistente qualunque
+        # sia il deployment) viene calcolato a runtime in admin/routes.py::_form_context.
+        args=["--db-path", "<DATA_DIR>/db/database.db"],
         credential_kind="none",
-        hint="Imposta in Argomenti il percorso del file DB: '--db-path /opt/mcphub/data/db/NOME.db'. "
-             "Il file viene creato se non esiste e vive sul disco persistente del server. "
+        hint="Il percorso del file DB è pre-compilato sotto la cartella dati di questo "
+             "deployment (persistente su qualunque piattaforma: Lightsail, Azure, Docker). "
+             "Cambia solo il nome del file se vuoi un database diverso da 'database.db'. "
+             "Il file viene creato se non esiste. "
              "Tool: read_query, write_query, create_table, list_tables, describe_table.",
     ),
     ServerType(

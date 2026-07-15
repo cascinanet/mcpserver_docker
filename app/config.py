@@ -28,9 +28,17 @@ class Settings(BaseSettings):
     def users_file(self) -> Path:
         return self.data_dir / "users.json"
 
+    @property
+    def sqlite_dir(self) -> Path:
+        """Cartella per i database dei server MCP di tipo 'sqlite': sotto data_dir così vive
+        sempre sul disco/volume persistente, qualunque sia il deployment (Lightsail, Azure,
+        Docker)."""
+        return self.data_dir / "db"
+
 
 @lru_cache
 def get_settings() -> Settings:
     settings = Settings()
     settings.data_dir.mkdir(parents=True, exist_ok=True)
+    settings.sqlite_dir.mkdir(parents=True, exist_ok=True)
     return settings
