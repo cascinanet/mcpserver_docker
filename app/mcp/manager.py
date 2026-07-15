@@ -113,6 +113,13 @@ class SessionManager:
             if stale:
                 logger.info("Reaper: chiuse %d sessioni; attive ora %d", len(stale), len(self._sessions))
 
+    async def close_server_pool(self, server_id: str) -> None:
+        """Chiude i processi caldi in pool per un server (es. dopo aver sostituito i suoi dati
+        su disco, come il ripristino di un backup): il prossimo utilizzo riparte da zero."""
+        pool = self._pools.pop(server_id, [])
+        for session in pool:
+            await session.close()
+
     # --- test di connessione on-demand (pulsante "Testa connessione" nel pannello) ---
 
     async def test_connection(self, server: MCPServer, timeout: float = 20.0) -> dict:

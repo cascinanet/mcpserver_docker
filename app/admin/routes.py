@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import shutil
+import time
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 
 from app import runtime
@@ -188,6 +190,41 @@ async def download_db(server_id: str, user: str = Depends(require_login)):
             detail="File database non ancora creato (avvia il server almeno una volta, es. con 'Testa connessione').",
         )
     return FileResponse(resolved, filename=f"{server_id}.db", media_type="application/octet-stream")
+
+
+@router.post("/servers/{server_id}/restore-db")
+async def restore_db(server_id: str, file: UploadFile = File(...), user: str = Depends(require_login)):
+    """Sostituisce il file SQLite con uno caricato dall'admin (ripristino di un backup).
+    Stessi controlli di sicurezza del download; risponde sempre 200 con {ok, detail} tranne
+    che per ID/tipo non validi, così il pulsante nel form gestisce l'esito in modo uniforme."""
+    server = store.get_server(server_id)
+    if not server or server.type != "sqlite":
+        return JSONResponse({"ok": False, "detail": "Server SQLite non trovato."}, status_code=404)
+    db_path = _sqlite_db_path(server)
+    if not db_path:
+        return JSONResponse({"ok": False, "detail": "Percorso del database non configurato."}, status_code=400)
+    resolved = db_path.resolve()
+    if not resolved.is_relative_to(get_settings().data_dir.resolve()):
+        return JSONResponse({"ok": False, "detail": "Percorso del database fuori dalla cartella dati."}, status_code=400)
+
+    content = await file.read()
+    if not content.startswith(b"SQLite format 3\x00"):
+        return JSONResponse(
+            {"ok": False, "detail": "Il file caricato non è un database SQLite valido."}, status_code=400
+        )
+
+    backup_note = ""
+    if resolved.is_file():
+        backup_path = resolved.with_name(f"{resolved.name}.bak-{int(time.time())}")
+        shutil.copy2(resolved, backup_path)
+        backup_note = f" Backup del file precedente salvato come '{backup_path.name}'."
+
+    resolved.parent.mkdir(parents=True, exist_ok=True)
+    resolved.write_bytes(content)
+    # Chiude eventuali processi caldi già in pool: leggerebbero ancora il file vecchio.
+    await manager.close_server_pool(server_id)
+
+    return JSONResponse({"ok": True, "detail": f"Database ripristinato ({len(content)} byte).{backup_note}"})
 
 
 @router.post("/servers/{server_id}/test")

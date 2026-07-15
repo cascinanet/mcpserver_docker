@@ -72,6 +72,15 @@
       <a class="btn secondary" href="/servers/{{ server.id }}/download-db">Scarica DB (backup)</a>
       {% endif %}
     </div>
+
+    {% if server and server.type == 'sqlite' %}
+    <div style="margin-top:14px; padding-top:14px; border-top:1px solid var(--border); display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+      <input type="file" id="restore-file" accept=".db,.sqlite,.sqlite3"
+             style="width:auto; background:#0c0e12; border:1px solid var(--border); color:var(--fg); border-radius:8px; padding:8px;">
+      <button class="btn secondary" type="button" id="restore-btn">Ripristina database</button>
+      <span id="restore-result" class="muted"></span>
+    </div>
+    {% endif %}
   </form>
 </div>
 
@@ -127,6 +136,44 @@
         resultEl.style.color = 'var(--danger)';
       } finally {
         testBtn.disabled = false;
+      }
+    });
+  }
+
+  // Pulsante "Ripristina database": carica un file .db e sostituisce quello attuale.
+  // Niente <form multipart> annidato (siamo già dentro il form di salvataggio): l'upload
+  // parte via fetch, con un backup automatico del file precedente lato server.
+  const restoreBtn = document.getElementById('restore-btn');
+  if (restoreBtn) {
+    const fileInput = document.getElementById('restore-file');
+    const restoreResult = document.getElementById('restore-result');
+    restoreBtn.addEventListener('click', async () => {
+      const file = fileInput.files[0];
+      if (!file) {
+        restoreResult.textContent = 'Seleziona prima un file.';
+        restoreResult.style.color = 'var(--danger)';
+        return;
+      }
+      if (!confirm('Sovrascrivere il database attuale con il file caricato? Il file esistente ' +
+                   'verrà salvato automaticamente come backup prima della sostituzione.')) {
+        return;
+      }
+      restoreBtn.disabled = true;
+      restoreResult.style.color = '';
+      restoreResult.textContent = 'Ripristino in corso…';
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        const res = await fetch('/servers/{{ server.id }}/restore-db', { method: 'POST', body: formData });
+        const data = await res.json();
+        restoreResult.textContent = data.detail;
+        restoreResult.style.color = data.ok ? 'var(--ok)' : 'var(--danger)';
+        if (data.ok) fileInput.value = '';
+      } catch (err) {
+        restoreResult.textContent = 'Errore di rete: ' + err;
+        restoreResult.style.color = 'var(--danger)';
+      } finally {
+        restoreBtn.disabled = false;
       }
     });
   }
