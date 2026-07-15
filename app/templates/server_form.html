@@ -68,6 +68,9 @@
       <button class="btn secondary" type="button" id="test-btn">Testa connessione</button>
       <span id="test-result" class="muted"></span>
       {% endif %}
+      {% if server and server.type == 'sqlite' %}
+      <a class="btn secondary" href="/servers/{{ server.id }}/download-db">Scarica DB (backup)</a>
+      {% endif %}
     </div>
   </form>
 </div>

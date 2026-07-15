@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 
 from app import runtime
 from app.auth import security
@@ -157,6 +158,36 @@ def _form_error(request: Request, user: str, server: MCPServer, error: str):
 async def delete_server(server_id: str, user: str = Depends(require_login)):
     store.delete_server(server_id)
     return RedirectResponse("/", status_code=303)
+
+
+def _sqlite_db_path(server: MCPServer) -> Path | None:
+    """Estrae il percorso del file DB dagli argomenti (--db-path <percorso>)."""
+    args = server.args
+    for i, arg in enumerate(args):
+        if arg == "--db-path" and i + 1 < len(args):
+            return Path(args[i + 1])
+    return None
+
+
+@router.get("/servers/{server_id}/download-db")
+async def download_db(server_id: str, user: str = Depends(require_login)):
+    """Scarica il file SQLite per un backup manuale. Ristretto ai server di tipo 'sqlite'
+    e a percorsi dentro DATA_DIR, per evitare che un --db-path anomalo esponga file arbitrari."""
+    server = store.get_server(server_id)
+    if not server or server.type != "sqlite":
+        raise HTTPException(status_code=404, detail="Server SQLite non trovato.")
+    db_path = _sqlite_db_path(server)
+    if not db_path:
+        raise HTTPException(status_code=400, detail="Percorso del database non configurato.")
+    resolved = db_path.resolve()
+    if not resolved.is_relative_to(get_settings().data_dir.resolve()):
+        raise HTTPException(status_code=400, detail="Percorso del database fuori dalla cartella dati.")
+    if not resolved.is_file():
+        raise HTTPException(
+            status_code=404,
+            detail="File database non ancora creato (avvia il server almeno una volta, es. con 'Testa connessione').",
+        )
+    return FileResponse(resolved, filename=f"{server_id}.db", media_type="application/octet-stream")
 
 
 @router.post("/servers/{server_id}/test")
