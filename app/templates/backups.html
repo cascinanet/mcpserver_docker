@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Backup {{ server.id }} — MCP Hub{% endblock %}
+{% block content %}
+<div style="display:flex; align-items:center; justify-content:space-between;">
+  <h1>Backup database — {{ server.name }}</h1>
+  <a class="btn secondary" href="/servers/{{ server.id }}/edit">Torna alla modifica</a>
+</div>
+
+<div class="card">
+  {% if backups %}
+  <div style="overflow-x:auto;">
+  <table>
+    <thead>
+      <tr><th>File</th><th>Dimensione</th><th>Creato il</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for b in backups %}
+      <tr>
+        <td><code>{{ b.name }}</code></td>
+        <td>{{ b.size }}</td>
+        <td>{{ b.created_at }}</td>
+        <td style="white-space:nowrap;">
+          <form method="post" action="/servers/{{ server.id }}/backups/{{ b.name }}/delete" style="display:inline;"
+                onsubmit="return confirm('Eliminare definitivamente {{ b.name }}?');">
+            <button class="btn danger" type="submit">Elimina</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="muted">Nessun backup automatico presente. Viene creato uno ogni volta che ripristini un database dalla pagina di modifica del server.</p>
+  {% endif %}
+</div>
+{% endblock %}

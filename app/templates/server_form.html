@@ -70,6 +70,7 @@
       {% endif %}
       {% if server and server.type == 'sqlite' %}
       <a class="btn secondary" href="/servers/{{ server.id }}/download-db">Scarica DB (backup)</a>
+      <a class="btn secondary" href="/servers/{{ server.id }}/backups">Gestisci backup</a>
       {% endif %}
     </div>
 

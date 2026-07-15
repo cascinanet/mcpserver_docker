@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import time
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
@@ -225,6 +227,73 @@ async def restore_db(server_id: str, file: UploadFile = File(...), user: str = D
     await manager.close_server_pool(server_id)
 
     return JSONResponse({"ok": True, "detail": f"Database ripristinato ({len(content)} byte).{backup_note}"})
+
+
+def _format_size(num_bytes: int) -> str:
+    if num_bytes < 1024:
+        return f"{num_bytes} B"
+    kb = num_bytes / 1024
+    if kb < 1024:
+        return f"{kb:.1f} KB"
+    return f"{kb / 1024:.1f} MB"
+
+
+def _backup_pattern(db_name: str) -> re.Pattern:
+    return re.compile(r"^" + re.escape(db_name) + r"\.bak-(\d+)$")
+
+
+def _list_backups(server: MCPServer) -> list[dict]:
+    db_path = _sqlite_db_path(server)
+    if not db_path:
+        return []
+    resolved = db_path.resolve()
+    if not resolved.is_relative_to(get_settings().data_dir.resolve()):
+        return []
+    pattern = _backup_pattern(resolved.name)
+    backups = []
+    for p in resolved.parent.glob(f"{resolved.name}.bak-*"):
+        match = pattern.match(p.name)
+        if not match:
+            continue
+        backups.append({
+            "name": p.name,
+            "size": _format_size(p.stat().st_size),
+            "created_at": datetime.fromtimestamp(int(match.group(1))).strftime("%Y-%m-%d %H:%M:%S"),
+            "sort_key": int(match.group(1)),
+        })
+    backups.sort(key=lambda b: b["sort_key"], reverse=True)
+    return backups
+
+
+@router.get("/servers/{server_id}/backups", response_class=HTMLResponse)
+async def list_backups(server_id: str, request: Request, user: str = Depends(require_login)):
+    server = store.get_server(server_id)
+    if not server or server.type != "sqlite":
+        raise HTTPException(status_code=404, detail="Server SQLite non trovato.")
+    return templates.TemplateResponse(
+        request, "backups.html", {"user": user, "server": server, "backups": _list_backups(server)},
+    )
+
+
+@router.post("/servers/{server_id}/backups/{filename}/delete")
+async def delete_backup(server_id: str, filename: str, user: str = Depends(require_login)):
+    server = store.get_server(server_id)
+    if not server or server.type != "sqlite":
+        raise HTTPException(status_code=404, detail="Server SQLite non trovato.")
+    db_path = _sqlite_db_path(server)
+    if not db_path:
+        raise HTTPException(status_code=400, detail="Percorso del database non configurato.")
+    resolved_db = db_path.resolve()
+    if not resolved_db.is_relative_to(get_settings().data_dir.resolve()):
+        raise HTTPException(status_code=400, detail="Percorso del database fuori dalla cartella dati.")
+    # Nome file validato contro un pattern esatto (niente '..' o percorsi assoluti nel path param).
+    if not _backup_pattern(resolved_db.name).match(filename):
+        raise HTTPException(status_code=400, detail="Nome file di backup non valido.")
+    backup_path = resolved_db.parent / filename
+    if not backup_path.is_file():
+        raise HTTPException(status_code=404, detail="Backup non trovato.")
+    backup_path.unlink()
+    return RedirectResponse(f"/servers/{server_id}/backups", status_code=303)
 
 
 @router.post("/servers/{server_id}/test")
