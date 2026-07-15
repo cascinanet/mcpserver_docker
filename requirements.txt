@@ -10,3 +10,4 @@ itsdangerous>=2.2
 # Server MCP integrati (pip-installati così sono pronti, niente download a runtime)
 analytics-mcp>=0.6
 mcp-search-console>=0.3
+mcp-server-sqlite>=0.6
