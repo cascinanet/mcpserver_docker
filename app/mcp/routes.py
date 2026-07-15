@@ -48,6 +48,29 @@ def _resolve(server_id: str, request: Request) -> MCPServer:
     return server
 
 
+_WRONG_TRANSPORT_HINT = (
+    "Transport Streamable HTTP (usato da claude.ai e dai client MCP attuali): "
+    "invia POST su '/mcp/{server_id}' (senza suffisso '/sse' o '/messages'). "
+    "'/sse' e '/messages' sono il transport HTTP+SSE legacy, deprecato."
+)
+
+
+@router.post("/{server_id}/sse")
+async def sse_wrong_method(server_id: str, request: Request):
+    """Un client Streamable HTTP che ha seguito l'URL sbagliato finisce qui: 404/401 se il
+    server non esiste o il token è errato, altrimenti spiega qual è il path corretto invece
+    del generico 405 di FastAPI (indistinguibile da un ID inesistente)."""
+    _resolve(server_id, request)
+    raise HTTPException(status_code=400, detail=_WRONG_TRANSPORT_HINT)
+
+
+@router.get("/{server_id}/messages")
+@router.delete("/{server_id}/messages")
+async def messages_wrong_method(server_id: str, request: Request):
+    _resolve(server_id, request)
+    raise HTTPException(status_code=400, detail=_WRONG_TRANSPORT_HINT)
+
+
 @router.get("/{server_id}/sse")
 async def sse(server_id: str, request: Request):
     server = store.get_server(server_id)
@@ -55,7 +78,11 @@ async def sse(server_id: str, request: Request):
         raise HTTPException(status_code=404, detail="Server MCP non trovato o disabilitato")
     _check_access(request, server.auth_token)
 
-    session = await manager.create(server)
+    try:
+        session = await manager.create(server)
+    except Exception as exc:  # noqa: BLE001 - comando non avviabile, credenziali mancanti, ecc.
+        logger.error("Avvio server MCP '%s' fallito: %s", server_id, exc)
+        raise HTTPException(status_code=503, detail=f"Servizio MCP non disponibile: {exc}")
     post_url = f"{request.url.path.rsplit('/', 1)[0]}/messages?session_id={session.id}"
 
     async def event_stream():
@@ -132,7 +159,11 @@ async def streamable_post(server_id: str, request: Request):
         if not session or session.server.id != server_id:
             raise HTTPException(status_code=404, detail="Sessione non trovata")
     elif init:
-        session = await manager.create(server)
+        try:
+            session = await manager.create(server)
+        except Exception as exc:  # noqa: BLE001 - comando non avviabile, credenziali mancanti, ecc.
+            logger.error("Avvio server MCP '%s' fallito: %s", server_id, exc)
+            raise HTTPException(status_code=503, detail=f"Servizio MCP non disponibile: {exc}")
         session_id = session.id
     else:
         raise HTTPException(status_code=400, detail="Mcp-Session-Id mancante")
@@ -147,7 +178,12 @@ async def streamable_post(server_id: str, request: Request):
                 await session.send(json.dumps(msg))
     except (asyncio.TimeoutError, RuntimeError) as exc:
         await manager.close(session_id)
+        manager.mark_crashed(server_id, str(exc))
         raise HTTPException(status_code=502, detail=f"Errore dal server MCP: {exc}")
+    except OSError as exc:
+        await manager.close(session_id)
+        manager.mark_crashed(server_id, str(exc))
+        raise HTTPException(status_code=503, detail=f"Servizio MCP non disponibile: {exc}")
 
     headers = {_SESSION_HEADER: session_id} if init else {}
     if not responses:

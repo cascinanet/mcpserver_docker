@@ -5,13 +5,14 @@ from __future__ import annotations
 import json
 
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from app import runtime
 from app.auth import security
 from app.auth.dependencies import require_login
 from app.config import get_settings
 from app.mcp import catalog
+from app.mcp.manager import manager
 from app.models import MCPServer
 from app.storage import store
 from app.templating import templates
@@ -37,6 +38,7 @@ async def dashboard(request: Request, user: str = Depends(require_login)):
         request, "dashboard.html",
         {"user": user, "servers": servers,
          "type_labels": {t.key: t.label for t in catalog.SERVER_TYPES},
+         "health": {s.id: manager.health(s.id) for s in servers},
          "logging_enabled": runtime.request_logging_enabled()},
     )
 
@@ -146,6 +148,17 @@ def _form_error(request: Request, user: str, server: MCPServer, error: str):
 async def delete_server(server_id: str, user: str = Depends(require_login)):
     store.delete_server(server_id)
     return RedirectResponse("/", status_code=303)
+
+
+@router.post("/servers/{server_id}/test")
+async def test_server(server_id: str, user: str = Depends(require_login)):
+    """Handshake MCP minimo ('initialize') eseguito internamente, senza passare da un
+    client esterno: usato dal pulsante 'Testa connessione' nel form di modifica server."""
+    server = store.get_server(server_id)
+    if not server:
+        return JSONResponse({"ok": False, "detail": "Server non trovato."}, status_code=404)
+    result = await manager.test_connection(server)
+    return JSONResponse(result)
 
 
 @router.get("/account/password", response_class=HTMLResponse)

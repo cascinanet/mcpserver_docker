@@ -84,6 +84,10 @@ def create_app() -> FastAPI:
             response = await call_next(request)
             entry["status"] = response.status_code
             return response
+        except Exception as exc:  # noqa: BLE001 - registra sempre uno status anche sugli errori non gestiti
+            entry["status"] = 500
+            entry["error"] = str(exc)
+            raise
         finally:
             try:
                 with open(settings.data_dir / "reqlog.jsonl", "a", encoding="utf-8") as fh:

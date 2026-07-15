@@ -9,6 +9,7 @@ ogni server: alla connessione ne assegniamo uno e ne avviamo un altro di scorta.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import secrets
 import time
@@ -28,6 +29,19 @@ class SessionManager:
     def __init__(self) -> None:
         self._sessions: dict[str, MCPSession] = {}
         self._pools: dict[str, list[MCPSession]] = {}
+        # Ultimo stato noto per server: {"state": "running"|"crashed"|"unknown", "error": str|None, "at": float|None}
+        self._health: dict[str, dict] = {}
+
+    # --- stato / salute per server (per il pannello admin) ---
+
+    def _record_health(self, server_id: str, state: str, error: str | None = None) -> None:
+        self._health[server_id] = {"state": state, "error": error, "at": time.time()}
+
+    def mark_crashed(self, server_id: str, error: str) -> None:
+        self._record_health(server_id, "crashed", error)
+
+    def health(self, server_id: str) -> dict:
+        return self._health.get(server_id, {"state": "unknown", "error": None, "at": None})
 
     # --- pool di processi caldi ---
 
@@ -44,8 +58,13 @@ class SessionManager:
         pool = self._pools.setdefault(server.id, [])
         while len(pool) < POOL_SIZE:
             session = MCPSession(secrets.token_urlsafe(24), server)
-            await session.start()
+            try:
+                await session.start()
+            except Exception as exc:  # noqa: BLE001
+                self._record_health(server.id, "crashed", str(exc))
+                raise
             pool.append(session)
+            self._record_health(server.id, "running")
             logger.info("Processo caldo pronto per %s (pool=%d)", server.id, len(pool))
 
     def _refill_bg(self, server: MCPServer) -> None:
@@ -64,7 +83,12 @@ class SessionManager:
         if session is None:
             # Pool vuoto: avvio a freddo (lento). Capita solo sotto burst di connessioni.
             session = MCPSession(secrets.token_urlsafe(24), server)
-            await session.start()
+            try:
+                await session.start()
+            except Exception as exc:  # noqa: BLE001
+                self._record_health(server.id, "crashed", str(exc))
+                raise
+            self._record_health(server.id, "running")
         # Backstop anti-accumulo: se troppe sessioni attive, chiudi le più vecchie.
         while len(self._sessions) >= MAX_SESSIONS:
             oldest = min(self._sessions.values(), key=lambda s: s.last_activity)
@@ -88,6 +112,45 @@ class SessionManager:
                 await self.close(sid)
             if stale:
                 logger.info("Reaper: chiuse %d sessioni; attive ora %d", len(stale), len(self._sessions))
+
+    # --- test di connessione on-demand (pulsante "Testa connessione" nel pannello) ---
+
+    async def test_connection(self, server: MCPServer, timeout: float = 20.0) -> dict:
+        """Avvia un processo ad-hoc (fuori dal pool), esegue l'handshake 'initialize' e lo
+        chiude subito. Non tocca sessioni/pool esistenti: pensato per l'admin UI."""
+        session = MCPSession(secrets.token_urlsafe(24), server)
+        try:
+            await session.start()
+        except Exception as exc:  # noqa: BLE001
+            self._record_health(server.id, "crashed", str(exc))
+            return {"ok": False, "detail": f"Impossibile avviare il processo: {exc}"}
+        try:
+            init_message = {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": {"name": "mcphub-test", "version": "1.0"},
+                },
+            }
+            raw = await session.request(init_message, timeout=timeout)
+            result = json.loads(raw)
+            if isinstance(result, dict) and result.get("error"):
+                error = result["error"]
+                self._record_health(server.id, "crashed", str(error))
+                return {"ok": False, "detail": f"Il server MCP ha risposto con un errore: {error}"}
+            info = (result.get("result") or {}).get("serverInfo", {}) if isinstance(result, dict) else {}
+            self._record_health(server.id, "running")
+            name = info.get("name", "sconosciuto")
+            version = info.get("version", "?")
+            return {"ok": True, "detail": f"Handshake riuscito — server: {name} v{version}"}
+        except (asyncio.TimeoutError, RuntimeError) as exc:
+            self._record_health(server.id, "crashed", str(exc))
+            return {"ok": False, "detail": f"Handshake fallito: {exc}"}
+        finally:
+            await session.close()
 
     async def close(self, session_id: str) -> None:
         session = self._sessions.pop(session_id, None)

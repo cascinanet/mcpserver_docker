@@ -104,9 +104,43 @@ Connettore personalizzato con URL (**senza `/sse`**, token URL-safe):
 https://mcp.cascinanet.it/mcp/<id>?token=<TOKEN>
 ```
 
+Prima di collegare un client esterno, usa il pulsante **Testa connessione** nella pagina di
+modifica del server: esegue l'handshake MCP (`initialize`) internamente e mostra subito se il
+comando parte, senza dover scoprire un problema di configurazione tramite Claude. Lo stato del
+processo (in esecuzione / crash / mai avviato, con ultimo errore) è visibile anche nella colonna
+**Processo** della dashboard.
+
 > Prerequisiti Google: abilitare le API nel progetto Cloud e dare al service account accesso
 > alle proprietà (GA4: Visualizzatore; Search Console: utente). Per GSC multi-sito, tutte le
 > proprietà accessibili compaiono in `list_properties` senza riconfigurare nulla.
+
+### Checklist per un nuovo servizio Google (GA4 / Search Console)
+
+1. **Abilita l'API specifica** nel progetto Google Cloud del service account (Analytics Data
+   API / Analytics Admin API per GA4, Search Console API per GSC — sono API distinte, vanno
+   abilitate entrambe se servono entrambi i servizi).
+2. **Concedi l'accesso al service account nel prodotto Google**, non solo su Cloud Console:
+   la procedura è diversa tra i due —
+   - **GA4**: aggiungi l'email del service account come utente **Visualizzatore** nella
+     proprietà, da Google Analytics → Amministrazione → Accesso alla proprietà.
+   - **Search Console**: aggiungi l'email del service account come **utente** della proprietà
+     in Search Console → Impostazioni → Utenti e autorizzazioni.
+3. **Genera il JSON della chiave** del service account e incollalo nel form (sezione
+   Credenziali) — l'hub lo salva in `DATA_DIR/creds/<id>.json` e collega automaticamente la
+   variabile d'ambiente giusta (`GOOGLE_APPLICATION_CREDENTIALS` o `GSC_CREDENTIALS_PATH`).
+4. **Verifica comando/env** nella sezione "Impostazioni tecniche": per i tipi da catalogo sono
+   già precompilati, controllali solo se hai personalizzato qualcosa.
+5. **Testa la connessione** (pulsante nel form) prima di collegare un client esterno.
+
+### Nota sulla discovery OAuth lato client
+
+I client MCP (incluso Claude) tentano automaticamente la sequenza di discovery OAuth
+(`/.well-known/oauth-protected-resource`, `/.well-known/oauth-authorization-server`,
+`POST /register`) dopo qualunque errore di connessione — anche quando l'errore non ha nulla a
+che fare con l'autenticazione. mcphub non implementa OAuth (l'auth è un token statico via
+`?token=` o header `Authorization: Bearer`), quindi questi tentativi falliscono sempre con 404:
+è un comportamento imposto dal client, atteso e innocuo, non un sintomo di un problema di
+configurazione dell'hub.
 
 ## Deploy in produzione (AWS Lightsail, Ubuntu 22.04)
 

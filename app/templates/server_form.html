@@ -16,7 +16,8 @@
     </select>
     <p class="muted" id="type-hint" style="margin:6px 0 0;"></p>
 
-    <label>ID (usato nell'URL, es. <code>analytics</code> → <code>/mcp/analytics/sse</code>)</label>
+    <label>ID (usato nell'URL, es. <code>analytics</code> → <code>/mcp/analytics</code>. Il suffisso
+    <code>/sse</code> esiste solo per il transport legacy HTTP+SSE, non usarlo con claude.ai)</label>
     <input type="text" name="id" value="{{ server.id if server else '' }}"
            {% if server %}readonly{% endif %} placeholder="es. cliente-rossi" required>
 
@@ -60,9 +61,13 @@
       Abilitato
     </label>
 
-    <div style="margin-top:20px; display:flex; gap:10px;">
+    <div style="margin-top:20px; display:flex; gap:10px; align-items:center;">
       <button class="btn" type="submit">Salva</button>
       <a class="btn secondary" href="/">Annulla</a>
+      {% if server %}
+      <button class="btn secondary" type="button" id="test-btn">Testa connessione</button>
+      <span id="test-result" class="muted"></span>
+      {% endif %}
     </div>
   </form>
 </div>
@@ -99,5 +104,28 @@
   applyType(!isEdit);
   // Al cambio tipo: pre-compila i campi tecnici dal template scelto.
   select.addEventListener('change', () => applyType(true));
+
+  // Pulsante "Testa connessione": handshake MCP minimo eseguito dal server, senza
+  // passare da un client esterno (es. claude.ai) per scoprire un problema di config.
+  const testBtn = document.getElementById('test-btn');
+  if (testBtn) {
+    const resultEl = document.getElementById('test-result');
+    testBtn.addEventListener('click', async () => {
+      testBtn.disabled = true;
+      resultEl.style.color = '';
+      resultEl.textContent = 'Test in corso…';
+      try {
+        const res = await fetch('/servers/{{ server.id }}/test', { method: 'POST' });
+        const data = await res.json();
+        resultEl.textContent = data.detail;
+        resultEl.style.color = data.ok ? 'var(--ok)' : 'var(--danger)';
+      } catch (err) {
+        resultEl.textContent = 'Errore di rete: ' + err;
+        resultEl.style.color = 'var(--danger)';
+      } finally {
+        testBtn.disabled = false;
+      }
+    });
+  }
 </script>
 {% endblock %}

@@ -11,10 +11,11 @@
   <div style="overflow-x:auto;">
   <table>
     <thead>
-      <tr><th>ID</th><th>Nome</th><th>Tipo</th><th>Comando</th><th>Stato</th><th>Endpoint SSE</th><th></th></tr>
+      <tr><th>ID</th><th>Nome</th><th>Tipo</th><th>Comando</th><th>Stato</th><th>Processo</th><th>Endpoint</th><th></th></tr>
     </thead>
     <tbody>
       {% for s in servers %}
+      {% set h = health.get(s.id, {}) %}
       <tr>
         <td><code>{{ s.id }}</code></td>
         <td>{{ s.name }}<br><span class="muted">{{ s.description }}</span></td>
@@ -24,7 +25,12 @@
           {% if s.enabled %}<span class="pill on">attivo</span>
           {% else %}<span class="pill off">disabilitato</span>{% endif %}
         </td>
-        <td><code>/mcp/{{ s.id }}/sse</code></td>
+        <td>
+          {% if h.state == 'running' %}<span class="pill on">in esecuzione</span>
+          {% elif h.state == 'crashed' %}<span class="pill danger" title="{{ h.error }}">crash</span>
+          {% else %}<span class="pill off">mai avviato</span>{% endif %}
+        </td>
+        <td><code>/mcp/{{ s.id }}</code></td>
         <td style="white-space:nowrap;">
           <a class="btn secondary" href="/servers/{{ s.id }}/edit">Modifica</a>
           <form method="post" action="/servers/{{ s.id }}/delete" style="display:inline;"
