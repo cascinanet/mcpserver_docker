@@ -11,3 +11,6 @@ itsdangerous>=2.2
 analytics-mcp>=0.6
 mcp-search-console>=0.3
 mcp-server-sqlite>=0.6
+# Server MCP custom incluso nel repo (app/mcp_servers/sqlcipher_server.py): DB cifrati SQLCipher
+sqlcipher3-binary>=0.5
+mcp>=1.28

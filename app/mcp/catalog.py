@@ -67,6 +67,21 @@ SERVER_TYPES: list[ServerType] = [
              "Tool: read_query, write_query, create_table, list_tables, describe_table.",
     ),
     ServerType(
+        key="sqlite_encrypted",
+        label="SQLite cifrato (SQLCipher)",
+        description="Database SQLite cifrato con SQLCipher. La passphrase si passa a ogni tool "
+                    "call (parametro 'key') e non viene mai memorizzata dall'hub.",
+        command="python3",
+        args=["-m", "app.mcp_servers.sqlcipher_server", "--db-path", "<DATA_DIR>/db/encrypted.db"],
+        credential_kind="none",
+        hint="Database cifrato a riposo. Ogni tool (read_query, write_query, create_table, "
+             "list_tables, describe_table) richiede il parametro 'key' con la passphrase: "
+             "non è salvata da nessuna parte e va fornita a ogni chiamata. Cambia solo il nome "
+             "del file negli argomenti se vuoi un database diverso da 'encrypted.db'. "
+             "Nota: 'Testa connessione' verifica solo che il processo parta, non la passphrase "
+             "(che per design non è nota all'hub).",
+    ),
+    ServerType(
         key="custom",
         label="Personalizzato (comando manuale)",
         description="Definisci manualmente comando, argomenti ed env per un qualsiasi server MCP stdio.",

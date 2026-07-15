@@ -68,13 +68,13 @@
       <button class="btn secondary" type="button" id="test-btn">Testa connessione</button>
       <span id="test-result" class="muted"></span>
       {% endif %}
-      {% if server and server.type == 'sqlite' %}
+      {% if server and server.type in ['sqlite', 'sqlite_encrypted'] %}
       <a class="btn secondary" href="/servers/{{ server.id }}/download-db">Scarica DB (backup)</a>
       <a class="btn secondary" href="/servers/{{ server.id }}/backups">Gestisci backup</a>
       {% endif %}
     </div>
 
-    {% if server and server.type == 'sqlite' %}
+    {% if server and server.type in ['sqlite', 'sqlite_encrypted'] %}
     <div style="margin-top:14px; padding-top:14px; border-top:1px solid var(--border); display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
       <input type="file" id="restore-file" accept=".db,.sqlite,.sqlite3"
              style="width:auto; background:#0c0e12; border:1px solid var(--border); color:var(--fg); border-radius:8px; padding:8px;">

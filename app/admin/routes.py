@@ -29,11 +29,11 @@ def _form_context(request: Request, user: str, server: MCPServer | None, error: 
     # Sostituisce il placeholder <DATA_DIR> nei template del catalogo (es. percorso DB sqlite)
     # con la cartella dati reale di questo deployment, così il form pre-compila un percorso
     # che vive davvero sul disco/volume persistente (Lightsail, Azure, Docker hanno DATA_DIR diversi).
-    sqlite_path = str(get_settings().sqlite_dir / "database.db")
+    data_dir = str(get_settings().data_dir)
     server_types = []
     for t in catalog.SERVER_TYPES:
         data = t.model_dump()
-        data["args"] = [a.replace("<DATA_DIR>/db/database.db", sqlite_path) for a in data["args"]]
+        data["args"] = [a.replace("<DATA_DIR>", data_dir) for a in data["args"]]
         server_types.append(data)
     return {
         "request": request,
@@ -164,6 +164,10 @@ async def delete_server(server_id: str, user: str = Depends(require_login)):
     return RedirectResponse("/", status_code=303)
 
 
+# Tipi che gestiscono un file DB via --db-path (backup/download/restore valgono per tutti).
+_SQLITE_TYPES = {"sqlite", "sqlite_encrypted"}
+
+
 def _sqlite_db_path(server: MCPServer) -> Path | None:
     """Estrae il percorso del file DB dagli argomenti (--db-path <percorso>)."""
     args = server.args
@@ -175,10 +179,11 @@ def _sqlite_db_path(server: MCPServer) -> Path | None:
 
 @router.get("/servers/{server_id}/download-db")
 async def download_db(server_id: str, user: str = Depends(require_login)):
-    """Scarica il file SQLite per un backup manuale. Ristretto ai server di tipo 'sqlite'
-    e a percorsi dentro DATA_DIR, per evitare che un --db-path anomalo esponga file arbitrari."""
+    """Scarica il file DB per un backup manuale. Ristretto ai server della famiglia sqlite
+    e a percorsi dentro DATA_DIR, per evitare che un --db-path anomalo esponga file arbitrari.
+    Per il tipo cifrato il file scaricato è già cifrato (SQLCipher), quindi sicuro da conservare."""
     server = store.get_server(server_id)
-    if not server or server.type != "sqlite":
+    if not server or server.type not in _SQLITE_TYPES:
         raise HTTPException(status_code=404, detail="Server SQLite non trovato.")
     db_path = _sqlite_db_path(server)
     if not db_path:
@@ -200,7 +205,7 @@ async def restore_db(server_id: str, file: UploadFile = File(...), user: str = D
     Stessi controlli di sicurezza del download; risponde sempre 200 con {ok, detail} tranne
     che per ID/tipo non validi, così il pulsante nel form gestisce l'esito in modo uniforme."""
     server = store.get_server(server_id)
-    if not server or server.type != "sqlite":
+    if not server or server.type not in _SQLITE_TYPES:
         return JSONResponse({"ok": False, "detail": "Server SQLite non trovato."}, status_code=404)
     db_path = _sqlite_db_path(server)
     if not db_path:
@@ -210,7 +215,16 @@ async def restore_db(server_id: str, file: UploadFile = File(...), user: str = D
         return JSONResponse({"ok": False, "detail": "Percorso del database fuori dalla cartella dati."}, status_code=400)
 
     content = await file.read()
-    if not content.startswith(b"SQLite format 3\x00"):
+    is_plaintext_sqlite = content.startswith(b"SQLite format 3\x00")
+    if server.type == "sqlite_encrypted":
+        # Il tipo cifrato deve ricevere un file cifrato: un DB SQLite in chiaro è chiaramente
+        # sbagliato. Non possiamo validare oltre senza la chiave (che l'hub non conosce).
+        if is_plaintext_sqlite:
+            return JSONResponse(
+                {"ok": False, "detail": "Il file caricato è un database SQLite in chiaro, non cifrato."},
+                status_code=400,
+            )
+    elif not is_plaintext_sqlite:
         return JSONResponse(
             {"ok": False, "detail": "Il file caricato non è un database SQLite valido."}, status_code=400
         )
@@ -268,7 +282,7 @@ def _list_backups(server: MCPServer) -> list[dict]:
 @router.get("/servers/{server_id}/backups", response_class=HTMLResponse)
 async def list_backups(server_id: str, request: Request, user: str = Depends(require_login)):
     server = store.get_server(server_id)
-    if not server or server.type != "sqlite":
+    if not server or server.type not in _SQLITE_TYPES:
         raise HTTPException(status_code=404, detail="Server SQLite non trovato.")
     return templates.TemplateResponse(
         request, "backups.html", {"user": user, "server": server, "backups": _list_backups(server)},
@@ -278,7 +292,7 @@ async def list_backups(server_id: str, request: Request, user: str = Depends(req
 @router.post("/servers/{server_id}/backups/{filename}/delete")
 async def delete_backup(server_id: str, filename: str, user: str = Depends(require_login)):
     server = store.get_server(server_id)
-    if not server or server.type != "sqlite":
+    if not server or server.type not in _SQLITE_TYPES:
         raise HTTPException(status_code=404, detail="Server SQLite non trovato.")
     db_path = _sqlite_db_path(server)
     if not db_path:

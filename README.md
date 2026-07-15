@@ -54,7 +54,29 @@ Definiti in [app/mcp/catalog.py](app/mcp/catalog.py). Aggiungere un tipo = aggiu
 |------|---------|-------------------|------|
 | `google_analytics` | `analytics-mcp` | `GOOGLE_APPLICATION_CREDENTIALS` | una proprietà via `property_id` nei tool |
 | `google_search_console` | `mcp-search-console` | `GSC_CREDENTIALS_PATH` (+ `GSC_SKIP_OAUTH=true`) | **multi-proprietà**: `site_url` per chiamata |
+| `sqlite` | `mcp-server-sqlite` | — | DB SQLite in chiaro sotto `DATA_DIR/db/` |
+| `sqlite_encrypted` | `python3 -m app.mcp_servers.sqlcipher_server` | — | DB cifrato **SQLCipher**: passphrase `key` per tool call (vedi sotto) |
 | `custom` | manuale | — | qualsiasi server MCP stdio |
+
+### SQLite cifrato (SQLCipher)
+
+Server MCP custom incluso nel repo ([app/mcp_servers/sqlcipher_server.py](app/mcp_servers/sqlcipher_server.py))
+per database SQLite **cifrati a riposo** con SQLCipher. Espone gli stessi tool del tipo `sqlite`
+(`read_query`, `write_query`, `create_table`, `list_tables`, `describe_table`) ma ognuno richiede
+un parametro obbligatorio **`key`** (la passphrase).
+
+- **La chiave non è mai memorizzata**: niente env, niente file, niente cache. Va passata a ogni
+  tool call, è usata solo per la durata della singola richiesta (connect → `PRAGMA key` → verifica
+  su `sqlite_master` → operazione → close) e poi scartata.
+- **Mai nei log**: il campo `key` è mascherato (`***`) nel logging diagnostico dei body dell'hub
+  e nei messaggi d'errore del server.
+- **Errori generici**: chiave assente/errata → *"chiave mancante o non valida"*, senza dettagli
+  sul file o sulla struttura. Un file esistente in chiaro (non cifrato) viene rifiutato.
+- **Modello di minaccia**: protegge il file DB **a riposo** (su disco e nei backup scaricati). La
+  chiave transita comunque in chiaro da client→hub (protetta dal TLS) e l'hub la vede in memoria
+  per l'istante della richiesta: non protegge dall'operatore dell'hub.
+- I pulsanti Scarica/Ripristina/Gestisci backup funzionano anche qui (il file scaricato è cifrato).
+- *"Testa connessione"* verifica solo che il processo parta, non la passphrase (per design non nota).
 
 ## Struttura
 

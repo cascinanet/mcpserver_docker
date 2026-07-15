@@ -133,6 +133,16 @@ def _is_initialize(messages: list) -> bool:
     return any(isinstance(m, dict) and m.get("method") == "initialize" for m in messages)
 
 
+def _mask_secrets(obj):
+    """Copia difensiva con i campi sensibili mascherati, per il logging diagnostico dei body.
+    In particolare la passphrase 'key' dei server SQLite cifrati non deve mai finire nei log."""
+    if isinstance(obj, dict):
+        return {k: ("***" if k == "key" and isinstance(v, str) else _mask_secrets(v)) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_mask_secrets(v) for v in obj]
+    return obj
+
+
 @router.post("/{server_id}")
 async def streamable_post(server_id: str, request: Request):
     server = _resolve(server_id, request)
@@ -148,7 +158,7 @@ async def streamable_post(server_id: str, request: Request):
         try:
             from app.config import get_settings as _gs
             with open(_gs().data_dir / "bodylog.jsonl", "a", encoding="utf-8") as _fh:
-                _fh.write(json.dumps({"ua": request.headers.get("user-agent"), "body": body})[:800] + "\n")
+                _fh.write(json.dumps({"ua": request.headers.get("user-agent"), "body": _mask_secrets(body)})[:800] + "\n")
         except OSError:
             pass
 
