@@ -29,6 +29,14 @@ class MCPServer(BaseModel):
     # Il JSON vero NON è salvato qui: vive in data/creds/<id>.json (fuori da git).
     has_credentials: bool = False
 
+    # Backup automatico del DB (solo per i tipi della famiglia sqlite, vedi app/backup.py).
+    # None/0 = backup automatico disattivato.
+    backup_interval_hours: int | None = None
+    # Quanti backup mantenere al massimo (i più vecchi vengono eliminati). None/0 = illimitato.
+    backup_retention: int | None = None
+    # Bookkeeping interno: timestamp (time.time()) dell'ultimo backup automatico eseguito.
+    backup_last_run_at: float | None = None
+
 
 class User(BaseModel):
     """Utente della admin UI."""

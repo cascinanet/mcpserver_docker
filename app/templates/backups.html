@@ -7,6 +7,44 @@
 </div>
 
 <div class="card">
+  <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;">
+    <strong>Backup automatico</strong>
+    <form method="post" action="/servers/{{ server.id }}/backups/create" style="display:inline;">
+      <button class="btn secondary" type="submit">Crea backup ora</button>
+    </form>
+  </div>
+  <form method="post" action="/servers/{{ server.id }}/backups/settings" style="margin-top:12px; display:flex; align-items:end; gap:16px; flex-wrap:wrap;">
+    <div style="flex:1; min-width:200px;">
+      <label>Frequenza</label>
+      <select name="backup_interval_hours"
+              style="width:100%; background:#0c0e12; border:1px solid var(--border); color:var(--fg); border-radius:8px; padding:9px 11px; font-size:14px;">
+        {% set current_interval = server.backup_interval_hours or 0 %}
+        <option value="0" {{ 'selected' if current_interval == 0 }}>Disattivato</option>
+        <option value="6" {{ 'selected' if current_interval == 6 }}>Ogni 6 ore</option>
+        <option value="12" {{ 'selected' if current_interval == 12 }}>Ogni 12 ore</option>
+        <option value="24" {{ 'selected' if current_interval == 24 }}>Ogni giorno</option>
+        <option value="168" {{ 'selected' if current_interval == 168 }}>Ogni settimana</option>
+      </select>
+    </div>
+    <div style="flex:1; min-width:200px;">
+      <label>Mantieni al massimo</label>
+      <input type="number" name="backup_retention" min="0" step="1"
+             value="{{ server.backup_retention or 0 }}" placeholder="0 = illimitato">
+    </div>
+    <div>
+      <button class="btn" type="submit">Salva impostazioni</button>
+    </div>
+  </form>
+  <p class="muted" style="margin-top:10px;">
+    Il controllo pianificato gira ogni 15 minuti; con "Ogni 6 ore" il primo backup automatico
+    parte entro 15 minuti dal salvataggio se non ne è stato ancora fatto uno, poi ogni 6 ore.
+    "Mantieni al massimo" elimina automaticamente i backup più vecchi (manuali o automatici)
+    oltre il numero indicato — 0 significa nessun limite.
+    {% if last_run %}<br>Ultimo backup automatico: {{ last_run }}.{% endif %}
+  </p>
+</div>
+
+<div class="card">
   {% if backups %}
   <div style="overflow-x:auto;">
   <table>
@@ -31,7 +69,7 @@
   </table>
   </div>
   {% else %}
-  <p class="muted">Nessun backup automatico presente. Viene creato uno ogni volta che ripristini un database dalla pagina di modifica del server.</p>
+  <p class="muted">Nessun backup presente. Creane uno con "Crea backup ora", pianifica quelli automatici sopra, oppure verrà creato uno ogni volta che ripristini un database dalla pagina di modifica del server.</p>
   {% endif %}
 </div>
 {% endblock %}

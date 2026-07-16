@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
+from app import backup
 from app.admin import routes as admin_routes
 from app.auth import routes as auth_routes
 from app.auth.security import ensure_bootstrap_admin
@@ -32,8 +33,11 @@ async def lifespan(app: FastAPI):
         logging.getLogger("mcp").exception("Prewarm iniziale fallito")
     # Reaper: chiude le sessioni inattive per evitare l'accumulo di subprocess (OOM).
     reaper = asyncio.create_task(manager.reap_loop())
+    # Backup automatico pianificato per i server sqlite/sqlite_encrypted che lo richiedono.
+    backup_task = asyncio.create_task(backup.scheduler_loop())
     yield
     reaper.cancel()
+    backup_task.cancel()
     await manager.close_all()
 
 

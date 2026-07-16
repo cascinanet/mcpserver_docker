@@ -3,15 +3,12 @@
 from __future__ import annotations
 
 import json
-import re
-import shutil
-import time
 from datetime import datetime
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 
+from app import backup as backup_mod
 from app import runtime
 from app.auth import security
 from app.auth.dependencies import require_login
@@ -165,16 +162,7 @@ async def delete_server(server_id: str, user: str = Depends(require_login)):
 
 
 # Tipi che gestiscono un file DB via --db-path (backup/download/restore valgono per tutti).
-_SQLITE_TYPES = {"sqlite", "sqlite_encrypted"}
-
-
-def _sqlite_db_path(server: MCPServer) -> Path | None:
-    """Estrae il percorso del file DB dagli argomenti (--db-path <percorso>)."""
-    args = server.args
-    for i, arg in enumerate(args):
-        if arg == "--db-path" and i + 1 < len(args):
-            return Path(args[i + 1])
-    return None
+_SQLITE_TYPES = backup_mod.SQLITE_TYPES
 
 
 @router.get("/servers/{server_id}/download-db")
@@ -185,12 +173,9 @@ async def download_db(server_id: str, user: str = Depends(require_login)):
     server = store.get_server(server_id)
     if not server or server.type not in _SQLITE_TYPES:
         raise HTTPException(status_code=404, detail="Server SQLite non trovato.")
-    db_path = _sqlite_db_path(server)
-    if not db_path:
-        raise HTTPException(status_code=400, detail="Percorso del database non configurato.")
-    resolved = db_path.resolve()
-    if not resolved.is_relative_to(get_settings().data_dir.resolve()):
-        raise HTTPException(status_code=400, detail="Percorso del database fuori dalla cartella dati.")
+    resolved = backup_mod.resolve_db_path(server)
+    if not resolved:
+        raise HTTPException(status_code=400, detail="Percorso del database non configurato o fuori dalla cartella dati.")
     if not resolved.is_file():
         raise HTTPException(
             status_code=404,
@@ -207,12 +192,12 @@ async def restore_db(server_id: str, file: UploadFile = File(...), user: str = D
     server = store.get_server(server_id)
     if not server or server.type not in _SQLITE_TYPES:
         return JSONResponse({"ok": False, "detail": "Server SQLite non trovato."}, status_code=404)
-    db_path = _sqlite_db_path(server)
-    if not db_path:
-        return JSONResponse({"ok": False, "detail": "Percorso del database non configurato."}, status_code=400)
-    resolved = db_path.resolve()
-    if not resolved.is_relative_to(get_settings().data_dir.resolve()):
-        return JSONResponse({"ok": False, "detail": "Percorso del database fuori dalla cartella dati."}, status_code=400)
+    resolved = backup_mod.resolve_db_path(server)
+    if not resolved:
+        return JSONResponse(
+            {"ok": False, "detail": "Percorso del database non configurato o fuori dalla cartella dati."},
+            status_code=400,
+        )
 
     content = await file.read()
     is_plaintext_sqlite = content.startswith(b"SQLite format 3\x00")
@@ -231,9 +216,9 @@ async def restore_db(server_id: str, file: UploadFile = File(...), user: str = D
 
     backup_note = ""
     if resolved.is_file():
-        backup_path = resolved.with_name(f"{resolved.name}.bak-{int(time.time())}")
-        shutil.copy2(resolved, backup_path)
-        backup_note = f" Backup del file precedente salvato come '{backup_path.name}'."
+        result = backup_mod.create_backup(server)
+        if result["ok"]:
+            backup_note = f" Backup del file precedente creato prima della sostituzione ({result['detail']})"
 
     resolved.parent.mkdir(parents=True, exist_ok=True)
     resolved.write_bytes(content)
@@ -243,50 +228,46 @@ async def restore_db(server_id: str, file: UploadFile = File(...), user: str = D
     return JSONResponse({"ok": True, "detail": f"Database ripristinato ({len(content)} byte).{backup_note}"})
 
 
-def _format_size(num_bytes: int) -> str:
-    if num_bytes < 1024:
-        return f"{num_bytes} B"
-    kb = num_bytes / 1024
-    if kb < 1024:
-        return f"{kb:.1f} KB"
-    return f"{kb / 1024:.1f} MB"
-
-
-def _backup_pattern(db_name: str) -> re.Pattern:
-    return re.compile(r"^" + re.escape(db_name) + r"\.bak-(\d+)$")
-
-
-def _list_backups(server: MCPServer) -> list[dict]:
-    db_path = _sqlite_db_path(server)
-    if not db_path:
-        return []
-    resolved = db_path.resolve()
-    if not resolved.is_relative_to(get_settings().data_dir.resolve()):
-        return []
-    pattern = _backup_pattern(resolved.name)
-    backups = []
-    for p in resolved.parent.glob(f"{resolved.name}.bak-*"):
-        match = pattern.match(p.name)
-        if not match:
-            continue
-        backups.append({
-            "name": p.name,
-            "size": _format_size(p.stat().st_size),
-            "created_at": datetime.fromtimestamp(int(match.group(1))).strftime("%Y-%m-%d %H:%M:%S"),
-            "sort_key": int(match.group(1)),
-        })
-    backups.sort(key=lambda b: b["sort_key"], reverse=True)
-    return backups
-
-
 @router.get("/servers/{server_id}/backups", response_class=HTMLResponse)
 async def list_backups(server_id: str, request: Request, user: str = Depends(require_login)):
     server = store.get_server(server_id)
     if not server or server.type not in _SQLITE_TYPES:
         raise HTTPException(status_code=404, detail="Server SQLite non trovato.")
+    last_run = None
+    if server.backup_last_run_at:
+        last_run = datetime.fromtimestamp(server.backup_last_run_at).strftime("%Y-%m-%d %H:%M:%S")
     return templates.TemplateResponse(
-        request, "backups.html", {"user": user, "server": server, "backups": _list_backups(server)},
+        request, "backups.html",
+        {"user": user, "server": server, "backups": backup_mod.list_backups(server), "last_run": last_run},
     )
+
+
+@router.post("/servers/{server_id}/backups/create")
+async def create_backup_now(server_id: str, user: str = Depends(require_login)):
+    """Crea subito un backup (copia del file DB) fuori da qualunque pianificazione."""
+    server = store.get_server(server_id)
+    if not server or server.type not in _SQLITE_TYPES:
+        raise HTTPException(status_code=404, detail="Server SQLite non trovato.")
+    backup_mod.create_backup(server)
+    return RedirectResponse(f"/servers/{server_id}/backups", status_code=303)
+
+
+@router.post("/servers/{server_id}/backups/settings")
+async def save_backup_settings(
+    server_id: str,
+    backup_interval_hours: int = Form(0),
+    backup_retention: int = Form(0),
+    user: str = Depends(require_login),
+):
+    """Salva pianificazione (ogni N ore, 0 = disattivato) e retention (max backup da
+    mantenere, 0 = illimitato) per il backup automatico di questo server."""
+    server = store.get_server(server_id)
+    if not server or server.type not in _SQLITE_TYPES:
+        raise HTTPException(status_code=404, detail="Server SQLite non trovato.")
+    server.backup_interval_hours = backup_interval_hours or None
+    server.backup_retention = backup_retention or None
+    store.upsert_server(server)
+    return RedirectResponse(f"/servers/{server_id}/backups", status_code=303)
 
 
 @router.post("/servers/{server_id}/backups/{filename}/delete")
@@ -294,14 +275,11 @@ async def delete_backup(server_id: str, filename: str, user: str = Depends(requi
     server = store.get_server(server_id)
     if not server or server.type not in _SQLITE_TYPES:
         raise HTTPException(status_code=404, detail="Server SQLite non trovato.")
-    db_path = _sqlite_db_path(server)
-    if not db_path:
-        raise HTTPException(status_code=400, detail="Percorso del database non configurato.")
-    resolved_db = db_path.resolve()
-    if not resolved_db.is_relative_to(get_settings().data_dir.resolve()):
-        raise HTTPException(status_code=400, detail="Percorso del database fuori dalla cartella dati.")
+    resolved_db = backup_mod.resolve_db_path(server)
+    if not resolved_db:
+        raise HTTPException(status_code=400, detail="Percorso del database non configurato o fuori dalla cartella dati.")
     # Nome file validato contro un pattern esatto (niente '..' o percorsi assoluti nel path param).
-    if not _backup_pattern(resolved_db.name).match(filename):
+    if not backup_mod.backup_pattern(resolved_db.name).match(filename):
         raise HTTPException(status_code=400, detail="Nome file di backup non valido.")
     backup_path = resolved_db.parent / filename
     if not backup_path.is_file():
