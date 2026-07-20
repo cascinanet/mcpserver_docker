@@ -270,18 +270,32 @@ async def save_backup_settings(
     return RedirectResponse(f"/servers/{server_id}/backups", status_code=303)
 
 
-@router.post("/servers/{server_id}/backups/{filename}/delete")
-async def delete_backup(server_id: str, filename: str, user: str = Depends(require_login)):
+def _resolve_backup_path(server_id: str, filename: str) -> tuple[MCPServer, Path]:
+    """Helper comune a download/delete: valida server, tipo, percorso DB e nome file di
+    backup (regex ancorata: niente '..' o percorsi assoluti nel path param)."""
     server = store.get_server(server_id)
     if not server or server.type not in _SQLITE_TYPES:
         raise HTTPException(status_code=404, detail="Server SQLite non trovato.")
     resolved_db = backup_mod.resolve_db_path(server)
     if not resolved_db:
         raise HTTPException(status_code=400, detail="Percorso del database non configurato o fuori dalla cartella dati.")
-    # Nome file validato contro un pattern esatto (niente '..' o percorsi assoluti nel path param).
     if not backup_mod.backup_pattern(resolved_db.name).match(filename):
         raise HTTPException(status_code=400, detail="Nome file di backup non valido.")
-    backup_path = resolved_db.parent / filename
+    return server, resolved_db.parent / filename
+
+
+@router.get("/servers/{server_id}/backups/{filename}/download")
+async def download_backup(server_id: str, filename: str, user: str = Depends(require_login)):
+    """Scarica un singolo file di backup (stessi controlli di sicurezza della cancellazione)."""
+    _server, backup_path = _resolve_backup_path(server_id, filename)
+    if not backup_path.is_file():
+        raise HTTPException(status_code=404, detail="Backup non trovato.")
+    return FileResponse(backup_path, filename=filename, media_type="application/octet-stream")
+
+
+@router.post("/servers/{server_id}/backups/{filename}/delete")
+async def delete_backup(server_id: str, filename: str, user: str = Depends(require_login)):
+    _server, backup_path = _resolve_backup_path(server_id, filename)
     if not backup_path.is_file():
         raise HTTPException(status_code=404, detail="Backup non trovato.")
     backup_path.unlink()

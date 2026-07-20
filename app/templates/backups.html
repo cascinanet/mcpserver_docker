@@ -58,6 +58,7 @@
         <td>{{ b.size }}</td>
         <td>{{ b.created_at }}</td>
         <td style="white-space:nowrap;">
+          <a class="btn secondary" href="/servers/{{ server.id }}/backups/{{ b.name }}/download">Scarica</a>
           <form method="post" action="/servers/{{ server.id }}/backups/{{ b.name }}/delete" style="display:inline;"
                 onsubmit="return confirm('Eliminare definitivamente {{ b.name }}?');">
             <button class="btn danger" type="submit">Elimina</button>
