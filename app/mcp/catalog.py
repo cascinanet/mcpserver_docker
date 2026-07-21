@@ -82,6 +82,20 @@ SERVER_TYPES: list[ServerType] = [
              "(che per design non è nota all'hub).",
     ),
     ServerType(
+        key="woocommerce",
+        label="WooCommerce (report e-commerce)",
+        description="Reporting WooCommerce in tempo reale: vendite, top prodotti, coupon, andamento, clienti, ordini.",
+        command="python3",
+        args=["-m", "app.mcp_servers.woocommerce_server"],
+        credential_kind="none",
+        hint="Imposta in Env: WC_SITE_URL (es. https://tuosito.it), WC_CONSUMER_KEY, "
+             "WC_CONSUMER_SECRET (WooCommerce → Impostazioni → Avanzate → REST API). "
+             "Opzionali WC_APP_USER e WC_APP_PASSWORD (WordPress → Utenti → Profilo → "
+             "\"Password per le applicazioni\", utente Amministratore): senza queste due, "
+             "fatturato per prodotto, dettaglio coupon e report clienti tornano dati ridotti "
+             "o non disponibili invece di un errore.",
+    ),
+    ServerType(
         key="custom",
         label="Personalizzato (comando manuale)",
         description="Definisci manualmente comando, argomenti ed env per un qualsiasi server MCP stdio.",

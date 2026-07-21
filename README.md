@@ -11,6 +11,7 @@ avviato come subprocess (transport stdio) e ponte verso il client.
 Server integrati:
 - **Google Analytics** — [`analytics-mcp`](https://github.com/googleanalytics/google-analytics-mcp) (GA4 Admin + Data API)
 - **Google Search Console** — [`mcp-search-console`](https://github.com/AminForou/mcp-gsc) (multi-proprietà)
+- **WooCommerce** — server custom incluso nel repo, reporting e-commerce in tempo reale (vendite, prodotti, coupon, clienti, ordini)
 
 ## Architettura
 
@@ -56,6 +57,7 @@ Definiti in [app/mcp/catalog.py](app/mcp/catalog.py). Aggiungere un tipo = aggiu
 | `google_search_console` | `mcp-search-console` | `GSC_CREDENTIALS_PATH` (+ `GSC_SKIP_OAUTH=true`) | **multi-proprietà**: `site_url` per chiamata |
 | `sqlite` | `mcp-server-sqlite` | — | DB SQLite in chiaro sotto `DATA_DIR/db/` |
 | `sqlite_encrypted` | `python3 -m app.mcp_servers.sqlcipher_server` | — | DB cifrato **SQLCipher**: passphrase `key` per tool call (vedi sotto) |
+| `woocommerce` | `python3 -m app.mcp_servers.woocommerce_server` | `WC_SITE_URL`, `WC_CONSUMER_KEY`, `WC_CONSUMER_SECRET` (+ opzionali `WC_APP_USER`/`WC_APP_PASSWORD`) | vedi sotto |
 | `custom` | manuale | — | qualsiasi server MCP stdio |
 
 ### SQLite cifrato (SQLCipher)
@@ -77,6 +79,32 @@ un parametro obbligatorio **`key`** (la passphrase).
   per l'istante della richiesta: non protegge dall'operatore dell'hub.
 - I pulsanti Scarica/Ripristina/Gestisci backup funzionano anche qui (il file scaricato è cifrato).
 - *"Testa connessione"* verifica solo che il processo parta, non la passphrase (per design non nota).
+
+### WooCommerce (report e-commerce)
+
+Server MCP custom incluso nel repo ([app/mcp_servers/woocommerce_server.py](app/mcp_servers/woocommerce_server.py)),
+alternativa stabile al connettore MCP nativo di WooCommerce (10.9+): quest'ultimo copre solo
+CRUD prodotti/ordini, zero report aggregati. Questo server avvolge invece le due API di
+reporting già stabili di WooCommerce, non in preview:
+
+| Namespace | Auth | Copre |
+|-----------|------|-------|
+| `wc/v3` | consumer key/secret | vendite totali, top seller per quantità, elenco ordini |
+| `wc-analytics` | Application Password WordPress (utente Amministratore) | fatturato per prodotto, coupon dettagliati, spesa per cliente — la stessa fonte dati del pannello WooCommerce → Analytics |
+
+Tool esposti: `panoramica_vendite`, `top_prodotti`, `report_coupon`, `andamento_temporale`,
+`report_clienti`, `elenco_ordini`.
+
+- **Due credenziali separate**: `WC_CONSUMER_KEY`/`WC_CONSUMER_SECRET` bastano per
+  `panoramica_vendite` ed `elenco_ordini`. Gli altri tool, senza anche
+  `WC_APP_USER`/`WC_APP_PASSWORD`, tornano un dato ridotto (es. solo quantità venduta, non
+  fatturato) con scritto chiaramente cosa manca, invece di un errore criptico.
+- **Nessun feature flag da abilitare** sul sito: entrambe le API sono attive di default,
+  indipendentemente dal supporto MCP nativo di WooCommerce.
+- **Privacy**: `report_clienti` espone nome ed email dei clienti. Usa una Application Password
+  con permessi minimi e valuta se serve davvero il dettaglio cliente o solo gli aggregati.
+- Prima di fidarsi dei numeri, testa su un intervallo già noto e confronta con un export CSV:
+  `wc-analytics` è un'API che WooCommerce cambia spesso.
 
 ## Struttura
 

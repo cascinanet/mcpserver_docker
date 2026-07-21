@@ -14,3 +14,5 @@ mcp-server-sqlite>=0.6
 # Server MCP custom incluso nel repo (app/mcp_servers/sqlcipher_server.py): DB cifrati SQLCipher
 sqlcipher3-binary>=0.5
 mcp>=1.28
+# Server MCP custom incluso nel repo (app/mcp_servers/woocommerce_server.py): report WooCommerce
+httpx>=0.27
