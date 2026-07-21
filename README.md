@@ -93,10 +93,12 @@ reporting già stabili di WooCommerce, non in preview:
 | `wc-analytics` | Application Password WordPress (utente Amministratore) | fatturato per prodotto, coupon dettagliati, spesa per cliente — la stessa fonte dati del pannello WooCommerce → Analytics |
 
 Tool esposti: `panoramica_vendite`, `top_prodotti`, `report_coupon`, `andamento_temporale`,
-`report_clienti`, `elenco_ordini`.
+`report_clienti`, `elenco_ordini`, `dettaglio_prodotto`, `ricerca_prodotti`, `report_categorie`,
+`dettaglio_ordine`, `clienti_nuovi_vs_ricorrenti`, `confronto_periodi`.
 
 - **Due credenziali separate**: `WC_CONSUMER_KEY`/`WC_CONSUMER_SECRET` bastano per
-  `panoramica_vendite` ed `elenco_ordini`. Gli altri tool, senza anche
+  `panoramica_vendite`, `elenco_ordini`, `dettaglio_prodotto`, `ricerca_prodotti`,
+  `dettaglio_ordine` e `confronto_periodi`. Gli altri tool, senza anche
   `WC_APP_USER`/`WC_APP_PASSWORD`, tornano un dato ridotto (es. solo quantità venduta, non
   fatturato) con scritto chiaramente cosa manca, invece di un errore criptico.
 - **Nessun feature flag da abilitare** sul sito: entrambe le API sono attive di default,
