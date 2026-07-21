@@ -152,13 +152,17 @@ async def _top_prodotti(periodo: str, data_inizio: str, data_fine: str, limite: 
                 params["before"] = f"{data_fine}T23:59:59"
         else:
             params["after"], params["before"] = _period_to_range(periodo or "week")
+        # extended_info=1: senza questo l'API non include nome/SKU, solo gli ID.
+        params["extended_info"] = "1"
         data = await _get_analytics("reports/products", params)
         items = data if isinstance(data, list) else []
         return {
             "fonte": "wc-analytics (con fatturato)",
             "prodotti": [
                 {
-                    "nome": (i.get("extended_info") or {}).get("name") or i.get("name"),
+                    "id": i.get("product_id"),
+                    "nome": (i.get("extended_info") or {}).get("name"),
+                    "sku": (i.get("extended_info") or {}).get("sku"),
                     "quantita_venduta": i.get("items_sold"),
                     "fatturato": i.get("net_revenue"),
                 }
@@ -178,7 +182,8 @@ async def _top_prodotti(periodo: str, data_inizio: str, data_fine: str, limite: 
     return {
         "fonte": "wc/v3 legacy (solo quantità)",
         "avviso": _ANALYTICS_HINT,
-        "prodotti": [{"nome": i.get("name"), "quantita_venduta": i.get("quantity")} for i in items],
+        # Il report legacy usa 'title', non 'name'.
+        "prodotti": [{"id": i.get("product_id"), "nome": i.get("title"), "quantita_venduta": i.get("quantity")} for i in items],
     }
 
 
@@ -190,13 +195,16 @@ async def _report_coupon(data_inizio: str, data_fine: str, limite: int) -> dict:
             params["after"] = f"{data_inizio}T00:00:00"
         if data_fine:
             params["before"] = f"{data_fine}T23:59:59"
+        # extended_info=1: senza questo l'API non include il codice coupon, solo l'ID.
+        params["extended_info"] = "1"
         data = await _get_analytics("reports/coupons", params)
         items = data if isinstance(data, list) else []
         return {
             "fonte": "wc-analytics (dettaglio per coupon)",
             "coupon": [
                 {
-                    "codice": (i.get("extended_info") or {}).get("code") or i.get("code"),
+                    "id": i.get("coupon_id"),
+                    "codice": (i.get("extended_info") or {}).get("code"),
                     "ordini": i.get("orders_count"),
                     "sconto_totale": i.get("amount"),
                 }
