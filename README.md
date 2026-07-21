@@ -93,18 +93,22 @@ reporting già stabili di WooCommerce, non in preview:
 | `wc-analytics` | Application Password WordPress (utente Amministratore) | fatturato per prodotto, coupon dettagliati, spesa per cliente — la stessa fonte dati del pannello WooCommerce → Analytics |
 
 Tool esposti: `panoramica_vendite`, `top_prodotti`, `report_coupon`, `andamento_temporale`,
-`report_clienti`, `elenco_ordini`, `dettaglio_prodotto`, `ricerca_prodotti`, `report_categorie`,
-`dettaglio_ordine`, `clienti_nuovi_vs_ricorrenti`, `confronto_periodi`.
+`report_clienti`, `elenco_ordini`, `dettaglio_prodotto`, `ricerca_prodotti`, `catalogo_prodotti`,
+`report_categorie`, `dettaglio_ordine`, `clienti_nuovi_vs_ricorrenti`, `confronto_periodi`.
 
 - **Due credenziali separate**: `WC_CONSUMER_KEY`/`WC_CONSUMER_SECRET` bastano per
   `panoramica_vendite`, `elenco_ordini`, `dettaglio_prodotto`, `ricerca_prodotti`,
-  `dettaglio_ordine` e `confronto_periodi`. Gli altri tool, senza anche
+  `catalogo_prodotti`, `dettaglio_ordine` e `confronto_periodi`. Gli altri tool, senza anche
   `WC_APP_USER`/`WC_APP_PASSWORD`, tornano un dato ridotto (es. solo quantità venduta, non
   fatturato) con scritto chiaramente cosa manca, invece di un errore criptico.
 - **Nessun feature flag da abilitare** sul sito: entrambe le API sono attive di default,
   indipendentemente dal supporto MCP nativo di WooCommerce.
 - **Privacy**: `report_clienti` espone nome ed email dei clienti. Usa una Application Password
   con permessi minimi e valuta se serve davvero il dettaglio cliente o solo gli aggregati.
+- **Campi ACF**: `catalogo_prodotti` include un campo `acf` per prodotto, ma `wc/v3/products`
+  non lo espone di default. Se il sito non ha già un filtro che lo aggiunge, il tool torna
+  `acf_disponibile: false` e una `nota_acf` con lo snippet PHP da aggiungere (stesso pattern
+  del Code Snippets già usato per il tracking Matomo).
 - Prima di fidarsi dei numeri, testa su un intervallo già noto e confronta con un export CSV:
   `wc-analytics` è un'API che WooCommerce cambia spesso.
 

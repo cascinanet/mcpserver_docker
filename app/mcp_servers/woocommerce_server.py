@@ -350,6 +350,75 @@ async def _ricerca_prodotti(query: str, limite: int) -> dict:
     }
 
 
+_ACF_NOTA = (
+    "Nessun campo ACF trovato nella risposta: il sito non li espone ancora su wc/v3/products. "
+    "Per farli comparire, aggiungi sul sito (es. via Code Snippets) un filtro che li allega alla "
+    "risposta REST del prodotto:\n"
+    "add_filter('woocommerce_rest_prepare_product_object', function ($response, $object, $request) {\n"
+    "    $response->data['acf'] = get_fields($object->get_id());\n"
+    "    return $response;\n"
+    "}, 10, 3);"
+)
+_CATALOGO_MAX_PRODOTTI = 5000  # tetto di sicurezza anti-loop, non un limite di business
+
+
+def _map_prodotto_completo(p: dict) -> dict:
+    images = p.get("images") or []
+    return {
+        "id": p.get("id"),
+        "nome": p.get("name"),
+        "slug": p.get("slug"),
+        "tipo": p.get("type"),
+        "sku": p.get("sku"),
+        "prezzo": p.get("price"),
+        "prezzo_regolare": p.get("regular_price"),
+        "prezzo_scontato": p.get("sale_price"),
+        "descrizione": p.get("description"),
+        "descrizione_breve": p.get("short_description"),
+        "categorie": [c.get("name") for c in (p.get("categories") or [])],
+        "tag": [t.get("name") for t in (p.get("tags") or [])],
+        "immagini": [img.get("src") for img in images],
+        "stock_status": p.get("stock_status"),
+        "quantita_stock": p.get("stock_quantity"),
+        "peso": p.get("weight") or None,
+        "dimensioni": p.get("dimensions") or None,
+        "attributi": [
+            {"nome": a.get("name"), "opzioni": a.get("options")} for a in (p.get("attributes") or [])
+        ],
+        "permalink": p.get("permalink"),
+        "data_modifica": p.get("date_modified"),
+        # Presente solo se il sito lo espone sulla risposta REST di wc/v3/products (vedi _ACF_NOTA).
+        "acf": p.get("acf"),
+    }
+
+
+async def _catalogo_prodotti(limite: int | None) -> dict:
+    """Tutti i prodotti con stato 'publish', paginando internamente su wc/v3/products."""
+    tetto = max(1, min(limite, _CATALOGO_MAX_PRODOTTI)) if limite else _CATALOGO_MAX_PRODOTTI
+    per_page = 100
+    pagina = 1
+    tutti: list[dict] = []
+    while len(tutti) < tetto:
+        data = await _get_v3("products", {"status": "publish", "per_page": per_page, "page": pagina})
+        items = data if isinstance(data, list) else []
+        if not items:
+            break
+        tutti.extend(items)
+        if len(items) < per_page:
+            break
+        pagina += 1
+    tutti = tutti[:tetto]
+    acf_presente = any(p.get("acf") for p in tutti)
+    risultato = {
+        "totale": len(tutti),
+        "acf_disponibile": acf_presente,
+        "prodotti": [_map_prodotto_completo(p) for p in tutti],
+    }
+    if not acf_presente:
+        risultato["nota_acf"] = _ACF_NOTA
+    return risultato
+
+
 async def _report_categorie(data_inizio: str, data_fine: str, limite: int) -> dict:
     if not _has_analytics_auth():
         raise ConfigError(
@@ -568,6 +637,21 @@ TOOLS = [
         },
     ),
     types.Tool(
+        name="catalogo_prodotti",
+        description="Elenco completo dei prodotti con stato 'pubblicato', con tutti i dettagli (prezzo, "
+        "descrizioni, categorie, attributi, immagini, stock, campi ACF se il sito li espone). Pensato per "
+        "automazioni che hanno bisogno dell'intero catalogo, non di un singolo report.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "limite": {
+                    "type": "integer",
+                    "description": f"Numero massimo di prodotti da restituire (default: tutti, fino a un tetto di sicurezza di {_CATALOGO_MAX_PRODOTTI}).",
+                }
+            },
+        },
+    ),
+    types.Tool(
         name="report_categorie",
         description="Fatturato e quantità vendute per categoria di prodotto nel periodo. Richiede Application Password.",
         inputSchema={
@@ -620,6 +704,7 @@ _DISPATCH = {
     "elenco_ordini": lambda a: _elenco_ordini(a.get("data_inizio", ""), a.get("data_fine", ""), a.get("stato", ""), a.get("limite")),
     "dettaglio_prodotto": lambda a: _dettaglio_prodotto(a.get("id")),
     "ricerca_prodotti": lambda a: _ricerca_prodotti(a.get("query", ""), a.get("limite")),
+    "catalogo_prodotti": lambda a: _catalogo_prodotti(a.get("limite")),
     "report_categorie": lambda a: _report_categorie(a.get("data_inizio", ""), a.get("data_fine", ""), a.get("limite")),
     "dettaglio_ordine": lambda a: _dettaglio_ordine(a.get("id")),
     "clienti_nuovi_vs_ricorrenti": lambda a: _clienti_nuovi_vs_ricorrenti(a.get("data_inizio", ""), a.get("data_fine", "")),
