@@ -82,12 +82,17 @@ def consume_state(state: str) -> str | None:
 
 def authorize_url(server: MCPServer, redirect_uri: str, state: str) -> str:
     client_id = _env(server, "LINKEDIN_CLIENT_ID")
+    # Scope sovrascrivibili via env 'LINKEDIN_SCOPES' (spazio-separati): utile per verificare
+    # il flusso OAuth con scope di base (es. 'openid profile', non gated da approvazione
+    # prodotto) prima che LinkedIn approvi Community Management API, che sblocca gli scope
+    # di pubblicazione in DEFAULT_SCOPES.
+    scope = _env(server, "LINKEDIN_SCOPES") or DEFAULT_SCOPES
     params = {
         "response_type": "code",
         "client_id": client_id,
         "redirect_uri": redirect_uri,
         "state": state,
-        "scope": DEFAULT_SCOPES,
+        "scope": scope,
     }
     return f"{AUTH_URL}?{httpx.QueryParams(params)}"
 
