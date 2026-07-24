@@ -38,6 +38,29 @@
                 style="min-height:120px; font-family:monospace;"></textarea>
     </div>
 
+    <!-- Sezione credenziali LinkedIn: visibile solo per il tipo 'linkedin'. I 3 campi vengono
+         uniti automaticamente nell'Env al salvataggio (niente JSON da scrivere a mano). -->
+    <div id="linkedin-creds-section" style="display:none;">
+      <label>Client ID (app LinkedIn Developer, scheda Auth)</label>
+      <input type="text" name="linkedin_client_id"
+             value="{{ server.env.get('LINKEDIN_CLIENT_ID', '') if server else '' }}"
+             placeholder="es. 866prpld7o3iuf">
+
+      <label>Client Secret</label>
+      <input type="text" name="linkedin_client_secret"
+             value="{{ server.env.get('LINKEDIN_CLIENT_SECRET', '') if server else '' }}"
+             placeholder="dalla scheda Auth, icona occhio per rivelarlo">
+
+      <label>ID Pagina aziendale (solo il numero, da <code>urn:li:organization:NUMERO</code>)</label>
+      <input type="text" name="linkedin_org_id"
+             value="{{ server.env.get('LINKEDIN_ORG_ID', '') if server else '' }}"
+             placeholder="es. 12345678">
+      <p class="muted" style="margin:6px 0 0;">
+        Per opzioni avanzate (es. <code>LINKEDIN_SCOPES</code> per testare il consenso OAuth prima
+        dell'approvazione di LinkedIn) usa il campo "Env extra (JSON)" nelle Impostazioni tecniche.
+      </p>
+    </div>
+
     <!-- Sezione tecnica: comando/argomenti/env. Per i tipi predefiniti è collassata. -->
     <details id="tech-section" {% if not server or server.type == 'custom' %}open{% endif %} style="margin-top:14px;">
       <summary class="muted" style="cursor:pointer;">Impostazioni tecniche (comando, argomenti, env)</summary>
@@ -114,9 +137,8 @@
       {% endif %}
     </div>
     <p class="muted" style="margin-top:10px;">
-      Richiede prima di aver impostato <code>LINKEDIN_CLIENT_ID</code> e <code>LINKEDIN_CLIENT_SECRET</code>
-      nelle Env qui sopra e salvato. Il redirect URI da registrare nell'app LinkedIn (scheda Auth) è
-      <code>{{ linkedin_redirect_uri }}</code>.
+      Richiede di aver compilato Client ID e Client Secret qui sopra e salvato. Il redirect URI
+      da registrare nell'app LinkedIn (scheda Auth) è <code>{{ linkedin_redirect_uri }}</code>.
     </p>
   </div>
   {% endif %}
@@ -128,6 +150,7 @@
   const select = document.getElementById('type-select');
   const hint = document.getElementById('type-hint');
   const credsSection = document.getElementById('creds-section');
+  const linkedinSection = document.getElementById('linkedin-creds-section');
   const cmd = document.getElementById('command-input');
   const args = document.getElementById('args-input');
   const envInput = document.getElementById('env-input');
@@ -138,6 +161,7 @@
     if (!t) return;
     hint.textContent = t.hint || t.description || '';
     credsSection.style.display = (t.credential_kind === 'google_service_account') ? 'block' : 'none';
+    linkedinSection.style.display = (t.key === 'linkedin') ? 'block' : 'none';
     // Pre-compila comando/argomenti/env dal template solo quando si cambia tipo
     // (non in modifica al primo caricamento, per non sovrascrivere i valori salvati).
     if (prefillTech) {

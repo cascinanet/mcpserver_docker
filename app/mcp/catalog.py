@@ -102,12 +102,11 @@ SERVER_TYPES: list[ServerType] = [
         command="python3",
         args=["-m", "app.mcp_servers.linkedin_server", "--server-id", "<SERVER_ID>"],
         credential_kind="none",
-        hint="Imposta in Env: LINKEDIN_CLIENT_ID, LINKEDIN_CLIENT_SECRET (dall'app LinkedIn "
-             "Developer, scheda Auth), LINKEDIN_ORG_ID (solo il numero dell'URN "
-             "urn:li:organization:NUMERO della Pagina). Salva, poi usa il pulsante "
-             "'Autorizza con LinkedIn' più sotto per completare il consenso OAuth. Richiede "
-             "che LinkedIn abbia approvato per l'app l'accesso al prodotto 'Community "
-             "Management API' (review lato LinkedIn, non immediata).",
+        hint="Compila Client ID, Client Secret (dall'app LinkedIn Developer, scheda Auth) e "
+             "ID Pagina qui sotto. Salva, poi usa il pulsante 'Autorizza con LinkedIn' più "
+             "sotto per completare il consenso OAuth. Richiede che LinkedIn abbia approvato "
+             "per l'app l'accesso al prodotto 'Community Management API' (review lato "
+             "LinkedIn, non immediata).",
     ),
     ServerType(
         key="custom",

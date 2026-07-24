@@ -118,6 +118,9 @@ async def save_server(
     credentials_json: str = Form(""),
     auth_token: str = Form(""),
     enabled: bool = Form(False),
+    linkedin_client_id: str = Form(""),
+    linkedin_client_secret: str = Form(""),
+    linkedin_org_id: str = Form(""),
     user: str = Depends(require_login),
 ):
     server_id = id.strip()
@@ -156,6 +159,16 @@ async def save_server(
         if project_id:
             env_dict.setdefault("GOOGLE_PROJECT_ID", project_id)
         has_credentials = True
+
+    # Campi dedicati LinkedIn: uniti nell'Env così l'admin non deve scrivere il JSON a mano.
+    # A differenza del box credenziali Google (sempre vuoto per design), questi campi sono
+    # pre-compilati con il valore attuale ad ogni apertura del form: se l'admin non li tocca
+    # il valore corrente viene ri-salvato invariato; se li svuota intenzionalmente, vengono
+    # cancellati (stesso comportamento dei campi Nome/Comando, non serve logica speciale).
+    if server_type.key == "linkedin":
+        env_dict["LINKEDIN_CLIENT_ID"] = linkedin_client_id.strip()
+        env_dict["LINKEDIN_CLIENT_SECRET"] = linkedin_client_secret.strip()
+        env_dict["LINKEDIN_ORG_ID"] = linkedin_org_id.strip()
 
     store.upsert_server(build(env_dict, has_credentials))
     return RedirectResponse("/", status_code=303)
