@@ -83,6 +83,43 @@
     </div>
     {% endif %}
   </form>
+
+  {% if server and server.type == 'linkedin' %}
+  <div style="margin-top:14px; padding-top:14px; border-top:1px solid var(--border);">
+    <strong>Autorizzazione LinkedIn</strong>
+    <p class="muted" style="margin:6px 0 12px;">
+      {% if request.query_params.get('linkedin_authorized') %}
+        ✅ Autorizzazione completata.
+      {% endif %}
+      {% if linkedin_status and linkedin_status.authorized %}
+        {% if linkedin_status.expired %}
+          <span class="pill danger">token scaduto</span> — prova a rifare l'autorizzazione, oppure attendi il
+          rinnovo automatico (gira ogni ora) se è presente un refresh token valido.
+        {% else %}
+          <span class="pill on">autorizzato</span>
+        {% endif %}
+      {% else %}
+        <span class="pill off">non ancora autorizzato</span> — richiesto prima di poter usare i tool.
+      {% endif %}
+    </p>
+    <div style="display:flex; gap:10px; align-items:center;">
+      <a class="btn secondary" href="/servers/{{ server.id }}/linkedin/authorize">
+        {{ 'Ri-autorizza con LinkedIn' if (linkedin_status and linkedin_status.authorized) else 'Autorizza con LinkedIn' }}
+      </a>
+      {% if linkedin_status and linkedin_status.authorized %}
+      <form method="post" action="/servers/{{ server.id }}/linkedin/deauthorize" style="display:inline;"
+            onsubmit="return confirm('Revocare l\'autorizzazione? Il server smetterà di funzionare finché non rifai il consenso.');">
+        <button class="btn danger" type="submit">Revoca autorizzazione</button>
+      </form>
+      {% endif %}
+    </div>
+    <p class="muted" style="margin-top:10px;">
+      Richiede prima di aver impostato <code>LINKEDIN_CLIENT_ID</code> e <code>LINKEDIN_CLIENT_SECRET</code>
+      nelle Env qui sopra e salvato. Il redirect URI da registrare nell'app LinkedIn (scheda Auth) è
+      <code>{{ linkedin_redirect_uri }}</code>.
+    </p>
+  </div>
+  {% endif %}
 </div>
 
 <script>

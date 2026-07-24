@@ -58,6 +58,7 @@ Definiti in [app/mcp/catalog.py](app/mcp/catalog.py). Aggiungere un tipo = aggiu
 | `sqlite` | `mcp-server-sqlite` | — | DB SQLite in chiaro sotto `DATA_DIR/db/` |
 | `sqlite_encrypted` | `python3 -m app.mcp_servers.sqlcipher_server` | — | DB cifrato **SQLCipher**: passphrase `key` per tool call (vedi sotto) |
 | `woocommerce` | `python3 -m app.mcp_servers.woocommerce_server` | `WC_SITE_URL`, `WC_CONSUMER_KEY`, `WC_CONSUMER_SECRET` (+ opzionali `WC_APP_USER`/`WC_APP_PASSWORD`) | vedi sotto |
+| `linkedin` | `python3 -m app.mcp_servers.linkedin_server` | `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET`, `LINKEDIN_ORG_ID` + autorizzazione OAuth (vedi sotto) | pubblica/gestisce post sulla Pagina aziendale |
 | `custom` | manuale | — | qualsiasi server MCP stdio |
 
 ### SQLite cifrato (SQLCipher)
@@ -111,6 +112,49 @@ Tool esposti: `panoramica_vendite`, `top_prodotti`, `report_coupon`, `andamento_
   del Code Snippets già usato per il tracking Matomo).
 - Prima di fidarsi dei numeri, testa su un intervallo già noto e confronta con un export CSV:
   `wc-analytics` è un'API che WooCommerce cambia spesso.
+
+### LinkedIn (pubblica e gestisci post)
+
+Server MCP custom incluso nel repo ([app/mcp_servers/linkedin_server.py](app/mcp_servers/linkedin_server.py))
+per creare/elencare/eliminare post sulla Pagina aziendale LinkedIn tramite la **Community
+Management API**. A differenza degli altri tipi, l'autenticazione non è una credenziale
+statica ma **OAuth 2.0**: serve un'app LinkedIn Developer approvata e un consenso una tantum
+dal pannello admin.
+
+**Setup lato LinkedIn** (esterno all'hub, richiede tempo):
+1. Crea un'app su [LinkedIn Developer Portal](https://www.linkedin.com/developers/apps),
+   collegata alla Pagina aziendale (devi esserne amministratore).
+2. Nella scheda **Settings**, completa la **verifica dell'app** (pulsante "Verify" — genera
+   un link che un admin della Pagina deve confermare): sblocca la richiesta di accesso ai
+   prodotti.
+3. Nella scheda **Products**, richiedi l'accesso a **Community Management API**. L'approvazione
+   di LinkedIn non è immediata (giorni, non ore).
+4. Nella scheda **Auth**, prendi **Client ID** e **Client Secret**, e aggiungi tra gli
+   **Authorized redirect URLs** l'URL `<PUBLIC_BASE_URL>/oauth/linkedin/callback`
+   (es. `https://servermcp.cascinanet.it/oauth/linkedin/callback`).
+
+**Setup lato hub**:
+1. Crea il server, tipo **LinkedIn** → in Env imposta `LINKEDIN_CLIENT_ID`,
+   `LINKEDIN_CLIENT_SECRET`, `LINKEDIN_ORG_ID` (solo il numero dell'URN
+   `urn:li:organization:NUMERO` della Pagina) → Salva.
+2. Clicca **"Autorizza con LinkedIn"**: reindirizza al consenso OAuth, poi torna
+   automaticamente al pannello con l'esito.
+3. Un task in background rinnova l'access token (~60 giorni di validità) prima che scada,
+   usando il refresh token; se il rinnovo fallisce (es. refresh token scaduto, ~1 anno),
+   va rifatto il consenso dal pulsante.
+
+Tool esposti: `crea_post`, `elenco_post`, `elimina_post`, `statistiche_post`.
+
+- **Token OAuth mai in chiaro nei log**: mascherati (`***`) sia negli errori del server sia
+  (per `access_token`/`refresh_token`/client secret) in ogni messaggio d'errore restituito.
+- **`PUBLIC_BASE_URL`**: imposta questa variabile d'ambiente con l'URL pubblico
+  dell'installazione (dominio + schema, senza slash finale) perché il redirect URI OAuth
+  corrisponda esattamente a quello registrato in LinkedIn — importante dietro un reverse
+  proxy TLS come quello di Plesk.
+- **Non ancora verificato dal vivo**: il codice segue la documentazione ufficiale di LinkedIn
+  ma non è stato testato contro l'API reale (in attesa di approvazione del prodotto
+  Community Management). In particolare `statistiche_post` usa un endpoint (`socialActions`)
+  storicamente meno stabile: verifica i nomi dei campi al primo utilizzo reale.
 
 ## Struttura
 

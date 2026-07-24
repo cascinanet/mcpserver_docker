@@ -20,6 +20,12 @@ class Settings(BaseSettings):
     bootstrap_admin_username: str = "admin"
     bootstrap_admin_password: str = "admin"
 
+    # URL pubblico di questa installazione (es. https://servermcp.cascinanet.it), usato per
+    # costruire redirect URI OAuth (es. callback LinkedIn) che devono corrispondere esattamente
+    # a quanto registrato lato provider. Vuoto = derivato dalla richiesta in arrivo (fallback
+    # ragionevole in locale, ma dietro un proxy TLS conviene impostarlo esplicitamente).
+    public_base_url: str = ""
+
     @property
     def servers_file(self) -> Path:
         return self.data_dir / "servers.json"

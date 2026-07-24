@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from app import backup
+from app import linkedin_oauth
 from app.admin import routes as admin_routes
 from app.auth import routes as auth_routes
 from app.auth.security import ensure_bootstrap_admin
@@ -35,9 +36,12 @@ async def lifespan(app: FastAPI):
     reaper = asyncio.create_task(manager.reap_loop())
     # Backup automatico pianificato per i server sqlite/sqlite_encrypted che lo richiedono.
     backup_task = asyncio.create_task(backup.scheduler_loop())
+    # Rinnovo automatico dei token OAuth LinkedIn prima che scadano.
+    linkedin_task = asyncio.create_task(linkedin_oauth.scheduler_loop())
     yield
     reaper.cancel()
     backup_task.cancel()
+    linkedin_task.cancel()
     await manager.close_all()
 
 

@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 
 from app import backup as backup_mod
+from app import linkedin_oauth
 from app import runtime
 from app.auth import security
 from app.auth.dependencies import require_login
@@ -23,15 +24,19 @@ router = APIRouter(tags=["admin"], dependencies=[Depends(require_login)])
 
 
 def _form_context(request: Request, user: str, server: MCPServer | None, error: str | None = None) -> dict:
-    # Sostituisce il placeholder <DATA_DIR> nei template del catalogo (es. percorso DB sqlite)
-    # con la cartella dati reale di questo deployment, così il form pre-compila un percorso
-    # che vive davvero sul disco/volume persistente (Lightsail, Azure, Docker hanno DATA_DIR diversi).
+    # Sostituisce i placeholder dei template del catalogo con i valori reali di questo
+    # deployment/server, così il form pre-compila comando/argomenti già pronti all'uso:
+    #   <DATA_DIR>   -> cartella dati reale (Lightsail, Azure, Docker hanno DATA_DIR diversi)
+    #   <SERVER_ID>  -> id del server in modifica (solo se già esistente/noto)
     data_dir = str(get_settings().data_dir)
     server_types = []
     for t in catalog.SERVER_TYPES:
         data = t.model_dump()
         data["args"] = [a.replace("<DATA_DIR>", data_dir) for a in data["args"]]
+        if server:
+            data["args"] = [a.replace("<SERVER_ID>", server.id) for a in data["args"]]
         server_types.append(data)
+    linkedin_status = linkedin_oauth.status(server.id) if server and server.type == "linkedin" else None
     return {
         "request": request,
         "user": user,
@@ -39,6 +44,8 @@ def _form_context(request: Request, user: str, server: MCPServer | None, error: 
         "error": error,
         "server_types": server_types,
         "default_type": catalog.default_type().key,
+        "linkedin_status": linkedin_status,
+        "linkedin_redirect_uri": f"{_public_base_url(request)}/oauth/linkedin/callback",
     }
 
 
@@ -118,10 +125,15 @@ async def save_server(
     server_type = catalog.get_type(type) or catalog.default_type()
 
     def build(env_dict: dict, has_credentials: bool) -> MCPServer:
+        # Rete di sicurezza server-side per i placeholder del catalogo: se il client non li ha
+        # sostituiti (es. tipo cambiato senza toccare Argomenti), non deve finire nel comando
+        # avviato un letterale '<SERVER_ID>' invece del vero id.
+        data_dir = str(get_settings().data_dir)
+        real_args = [a.replace("<DATA_DIR>", data_dir).replace("<SERVER_ID>", server_id) for a in args.split() if a]
         return MCPServer(
             id=server_id, name=name.strip(), type=server_type.key,
             description=description.strip(), command=command.strip(),
-            args=[a for a in args.split() if a], env=env_dict,
+            args=real_args, env=env_dict,
             auth_token=auth_token.strip() or None, enabled=enabled,
             has_credentials=has_credentials,
         )
@@ -159,6 +171,78 @@ def _form_error(request: Request, user: str, server: MCPServer, error: str):
 async def delete_server(server_id: str, user: str = Depends(require_login)):
     store.delete_server(server_id)
     return RedirectResponse("/", status_code=303)
+
+
+def _public_base_url(request: Request) -> str:
+    configured = get_settings().public_base_url
+    if configured:
+        return configured.rstrip("/")
+    # Fallback: dedotto dalla richiesta in arrivo. Dietro un reverse proxy che non inoltra
+    # correttamente lo schema originale, impostare PUBLIC_BASE_URL evita mismatch con il
+    # redirect URI registrato in LinkedIn.
+    return str(request.base_url).rstrip("/")
+
+
+@router.get("/servers/{server_id}/linkedin/authorize")
+async def linkedin_authorize(server_id: str, request: Request, user: str = Depends(require_login)):
+    """Avvia il consenso OAuth: redirige il browser dell'admin a LinkedIn."""
+    server = store.get_server(server_id)
+    if not server or server.type != "linkedin":
+        raise HTTPException(status_code=404, detail="Server LinkedIn non trovato.")
+    if not server.env.get("LINKEDIN_CLIENT_ID"):
+        raise HTTPException(status_code=400, detail="Imposta prima LINKEDIN_CLIENT_ID nelle Env e salva.")
+    state = linkedin_oauth.make_state(server_id)
+    redirect_uri = f"{_public_base_url(request)}/oauth/linkedin/callback"
+    return RedirectResponse(linkedin_oauth.authorize_url(server, redirect_uri, state))
+
+
+@router.get("/oauth/linkedin/callback", response_class=HTMLResponse)
+async def linkedin_callback(
+    request: Request,
+    code: str = "",
+    state: str = "",
+    error: str = "",
+    error_description: str = "",
+    user: str = Depends(require_login),
+):
+    """Riceve il redirect da LinkedIn, scambia il code per i token e li salva."""
+
+    def _bounce(message: str, server_id: str | None = None, code_status: int = 400):
+        back = f"/servers/{server_id}/edit" if server_id else "/"
+        return HTMLResponse(
+            f"<p>{message}</p><p><a href='{back}'>Torna al pannello</a></p>", status_code=code_status
+        )
+
+    if error:
+        return _bounce(f"LinkedIn ha rifiutato l'autorizzazione: {error} — {error_description}")
+
+    server_id = linkedin_oauth.consume_state(state)
+    if not server_id:
+        return _bounce("Sessione di autorizzazione scaduta o non valida (hai impiegato più di 10 minuti, o la pagina è stata aperta due volte). Riprova dal pulsante 'Autorizza con LinkedIn'.")
+
+    server = store.get_server(server_id)
+    if not server or server.type != "linkedin":
+        return _bounce("Server LinkedIn non trovato.", server_id)
+
+    redirect_uri = f"{_public_base_url(request)}/oauth/linkedin/callback"
+    try:
+        payload = await linkedin_oauth.exchange_code(server, code, redirect_uri)
+    except Exception as exc:  # noqa: BLE001
+        return _bounce(f"Scambio del code fallito: {exc}", server_id)
+
+    linkedin_oauth.save_tokens(server_id, payload)
+    return RedirectResponse(f"/servers/{server_id}/edit?linkedin_authorized=1", status_code=303)
+
+
+@router.post("/servers/{server_id}/linkedin/deauthorize")
+async def linkedin_deauthorize(server_id: str, user: str = Depends(require_login)):
+    """Elimina il token salvato (revoca locale): il server smetterà di funzionare finché non
+    si rifà il consenso OAuth."""
+    server = store.get_server(server_id)
+    if not server or server.type != "linkedin":
+        raise HTTPException(status_code=404, detail="Server LinkedIn non trovato.")
+    linkedin_oauth.delete_tokens(server_id)
+    return RedirectResponse(f"/servers/{server_id}/edit", status_code=303)
 
 
 # Tipi che gestiscono un file DB via --db-path (backup/download/restore valgono per tutti).
