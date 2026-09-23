@@ -31,6 +31,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import urllib.parse
 
 import httpx
@@ -181,6 +182,69 @@ def _urn_encode(urn: str) -> str:
     return urllib.parse.quote(urn, safe="")
 
 
+# Il campo 'commentary' della Posts API è in formato "little text": questi caratteri sono
+# riservati e vanno preceduti da '\'. Non farlo non dà errore: LinkedIn tronca in silenzio il
+# testo al primo carattere che non riesce a interpretare (es. "prima (dopo)" -> "prima").
+_LITTLE_TEXT_RESERVED = set("\\|{}@[]()<>#*_~")
+# Hashtag: '#' seguito da lettere/cifre (anche accentate). Il trattino basso non ne fa parte,
+# perché è a sua volta riservato.
+_HASHTAG_RE = re.compile(r"#([^\W_]+)")
+_HASHTAG_TEMPLATE_RE = re.compile(r"\{hashtag\|\\#\|([^}]*)\}")
+_MENTION_TEMPLATE_RE = re.compile(r"@\[([^\]]*)\]\([^)]*\)")
+_URL_RE = re.compile(r"https?://\S+")
+
+
+def _escape_little_text(text: str) -> str:
+    return "".join("\\" + ch if ch in _LITTLE_TEXT_RESERVED else ch for ch in text)
+
+
+def _to_little_text(testo: str) -> str:
+    """Testo semplice -> little text: hashtag nel formato esplicito di LinkedIn, tutto il resto
+    con i caratteri riservati preceduti da '\'."""
+    parts, pos = [], 0
+    for match in _HASHTAG_RE.finditer(testo):
+        parts.append(_escape_little_text(testo[pos:match.start()]))
+        parts.append(f"{{hashtag|\\#|{match.group(1)}}}")
+        pos = match.end()
+    parts.append(_escape_little_text(testo[pos:]))
+    return "".join(parts)
+
+
+def _from_little_text(text: str | None) -> str:
+    r"""Little text -> testo leggibile: '{hashtag|\#|x}' -> '#x', '@[Nome](urn)' -> '@Nome', '\(' -> '('."""
+    if not text:
+        return ""
+    text = _HASHTAG_TEMPLATE_RE.sub(lambda m: "#" + m.group(1), text)
+    text = _MENTION_TEMPLATE_RE.sub(lambda m: "@" + m.group(1), text)
+    return re.sub(r"\\(.)", r"\1", text, flags=re.DOTALL)
+
+
+def _comparable(text: str) -> str:
+    # LinkedIn accorcia i link (lnkd.in/...) e può normalizzare gli spazi: si confronta il resto.
+    return " ".join(_URL_RE.sub("<URL>", text).split())
+
+
+async def _verifica_testo(post_id: str | None, testo: str) -> dict:
+    """Rilegge il post appena creato e controlla che il testo salvato sia quello inviato."""
+    if not post_id:
+        return {"verifica": "non eseguita: LinkedIn non ha restituito l'ID del post"}
+    try:
+        resp = await _request("GET", f"/posts/{_urn_encode(post_id)}")
+    except (ConfigError, AuthExpiredError, httpx.RequestError) as exc:
+        return {"verifica": f"non eseguita: {exc}"}
+    if resp.status_code >= 400:
+        return {"verifica": f"non eseguita: LinkedIn ha risposto {resp.status_code} rileggendo il post"}
+    salvato = _from_little_text((resp.json() or {}).get("commentary"))
+    if _comparable(salvato) == _comparable(testo):
+        return {"verifica": "ok"}
+    return {
+        "verifica": "FALLITA",
+        "caratteri_inviati": len(testo),
+        "caratteri_salvati": len(salvato),
+        "testo_salvato": salvato,
+    }
+
+
 async def _crea_post(testo: str, visibilita: str, pagina: str | None) -> dict:
     if not testo or not testo.strip():
         raise ValueError("crea_post richiede il parametro 'testo'.")
@@ -188,7 +252,7 @@ async def _crea_post(testo: str, visibilita: str, pagina: str | None) -> dict:
     author = _author_urn(pagina)
     body = {
         "author": author,
-        "commentary": testo,
+        "commentary": _to_little_text(testo),
         "visibility": visibilita,
         "distribution": {
             "feedDistribution": "MAIN_FEED",
@@ -202,7 +266,19 @@ async def _crea_post(testo: str, visibilita: str, pagina: str | None) -> dict:
     if resp.status_code not in (200, 201):
         raise RuntimeError(f"LinkedIn ha risposto {resp.status_code} creando il post: {resp.text[:300]}")
     post_id = resp.headers.get("x-restli-id") or resp.headers.get("x-linkedin-id")
-    return {"ok": True, "post_id": post_id, "pagina": author, "visibilita": visibilita}
+    result = {"post_id": post_id, "pagina": author, "visibilita": visibilita}
+    result.update(await _verifica_testo(post_id, testo))
+    if result["verifica"] == "FALLITA":
+        # Il post è comunque online: ok=false e un avviso esplicito, così un troncamento non
+        # passa per una pubblicazione riuscita. La decisione se eliminarlo resta all'utente.
+        result["ok"] = False
+        result["avviso"] = (
+            "Il post è stato PUBBLICATO ma il testo salvato da LinkedIn è diverso da quello "
+            "inviato (vedi testo_salvato). Valuta se eliminarlo con elimina_post e ripubblicarlo."
+        )
+    else:
+        result["ok"] = True
+    return result
 
 
 async def _elenco_post(limite: int, pagina: str | None) -> dict:
@@ -221,7 +297,7 @@ async def _elenco_post(limite: int, pagina: str | None) -> dict:
         "post": [
             {
                 "id": e.get("id"),
-                "testo": e.get("commentary"),
+                "testo": _from_little_text(e.get("commentary")),
                 "stato": e.get("lifecycleState"),
                 "visibilita": e.get("visibility"),
                 "creato_il": e.get("createdAt"),
