@@ -67,6 +67,30 @@
       </p>
     </div>
 
+    <!-- Sezione credenziali Meta (Facebook + Instagram): visibile solo per il tipo 'meta'. -->
+    <div id="meta-creds-section" style="display:none;">
+      <label>App ID (Meta for Developers, scheda Impostazioni di base)</label>
+      <input type="text" name="meta_app_id"
+             value="{{ server.env.get('META_APP_ID', '') if server else '' }}"
+             placeholder="es. 1234567890123456">
+
+      <label>Chiave segreta app</label>
+      <input type="text" name="meta_app_secret"
+             value="{{ server.env.get('META_APP_SECRET', '') if server else '' }}"
+             placeholder="dalla scheda Impostazioni di base, icona occhio per rivelarla">
+
+      <label>Pagine (etichette, opzionale)</label>
+      <input type="text" name="meta_pages"
+             value="{{ server.env.get('META_PAGES', '') if server else '' }}"
+             placeholder="es. cascinanet=112233445566, pixelio=998877665544">
+      <p class="muted" style="margin:6px 0 0;">
+        Le Pagine Facebook amministrate e gli account Instagram collegati si scoprono da soli
+        con l'autorizzazione qui sotto: non vanno inseriti a mano prima. Le etichette servono
+        solo per usare un nome comodo (es. <code>pagina: "cascinanet"</code>) invece dell'ID
+        nei tool; senza etichette si usa l'ID mostrato da <code>elenco_pagine</code>.
+      </p>
+    </div>
+
     <!-- Sezione tecnica: comando/argomenti/env. Per i tipi predefiniti è collassata. -->
     <details id="tech-section" {% if not server or server.type == 'custom' %}open{% endif %} style="margin-top:14px;">
       <summary class="muted" style="cursor:pointer;">Impostazioni tecniche (comando, argomenti, env)</summary>
@@ -148,6 +172,48 @@
     </p>
   </div>
   {% endif %}
+
+  {% if server and server.type == 'meta' %}
+  <div style="margin-top:14px; padding-top:14px; border-top:1px solid var(--border);">
+    <strong>Autorizzazione Meta (Facebook + Instagram)</strong>
+    <p class="muted" style="margin:6px 0 12px;">
+      {% if request.query_params.get('meta_authorized') %}
+        ✅ Autorizzazione completata.
+      {% endif %}
+      {% if meta_status and meta_status.authorized %}
+        {% if meta_status.expired %}
+          <span class="pill danger">token scaduto</span> — prova a rifare l'autorizzazione, oppure attendi il
+          rinnovo automatico (gira ogni ora) se il token è ancora entro la finestra rinnovabile.
+        {% else %}
+          <span class="pill on">autorizzato</span> —
+          {% if meta_status.pagine %}
+            Pagine: {% for p in meta_status.pagine %}{{ p.nome or p.id }}{% if p.instagram %} (+ Instagram @{{ p.instagram }}){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}
+          {% else %}
+            nessuna Pagina trovata per questo utente.
+          {% endif %}
+        {% endif %}
+      {% else %}
+        <span class="pill off">non ancora autorizzato</span> — richiesto prima di poter usare i tool.
+      {% endif %}
+    </p>
+    <div style="display:flex; gap:10px; align-items:center;">
+      <a class="btn secondary" href="/servers/{{ server.id }}/meta/authorize">
+        {{ 'Ri-autorizza con Meta' if (meta_status and meta_status.authorized) else 'Autorizza con Meta' }}
+      </a>
+      {% if meta_status and meta_status.authorized %}
+      <form method="post" action="/servers/{{ server.id }}/meta/deauthorize" style="display:inline;"
+            onsubmit="return confirm('Revocare l\'autorizzazione? Il server smetterà di funzionare finché non rifai il consenso.');">
+        <button class="btn danger" type="submit">Revoca autorizzazione</button>
+      </form>
+      {% endif %}
+    </div>
+    <p class="muted" style="margin-top:10px;">
+      Richiede di aver compilato App ID e Chiave segreta qui sopra e salvato. Il redirect URI da
+      registrare nell'app Meta (Facebook Login per Business → Impostazioni →
+      Valid OAuth Redirect URIs) è <code>{{ meta_redirect_uri }}</code>.
+    </p>
+  </div>
+  {% endif %}
 </div>
 
 <script>
@@ -157,6 +223,7 @@
   const hint = document.getElementById('type-hint');
   const credsSection = document.getElementById('creds-section');
   const linkedinSection = document.getElementById('linkedin-creds-section');
+  const metaSection = document.getElementById('meta-creds-section');
   const cmd = document.getElementById('command-input');
   const args = document.getElementById('args-input');
   const envInput = document.getElementById('env-input');
@@ -168,6 +235,7 @@
     hint.textContent = t.hint || t.description || '';
     credsSection.style.display = (t.credential_kind === 'google_service_account') ? 'block' : 'none';
     linkedinSection.style.display = (t.key === 'linkedin') ? 'block' : 'none';
+    metaSection.style.display = (t.key === 'meta') ? 'block' : 'none';
     // Pre-compila comando/argomenti/env dal template solo quando si cambia tipo
     // (non in modifica al primo caricamento, per non sovrascrivere i valori salvati).
     if (prefillTech) {
