@@ -179,11 +179,20 @@ async def fetch_pages(user_access_token: str) -> dict[str, dict]:
     return pages
 
 
+# Durata tipica di un token utente di lunga durata, usata come ripiego quando Meta non
+# restituisce 'expires_in' nella risposta di fb_exchange_token (osservato dal vivo: capita
+# ri-autorizzando un utente che ha già un token valido — la richiesta di estensione riesce
+# ma il campo manca o vale 0). Senza questo ripiego 'expires_in' mancante/0 veniva
+# interpretato come "scade adesso", segnalando falsamente il token come scaduto subito dopo
+# averlo ottenuto con successo (e innescando un tentativo di rinnovo a ogni chiamata).
+DEFAULT_LONG_LIVED_SECONDS = 60 * 24 * 3600
+
+
 def save_tokens(server_id: str, user_access_token: str, expires_in: float, pages: dict[str, dict]) -> None:
     now = time.time()
     record = {
         "user_access_token": user_access_token,
-        "expires_at": now + float(expires_in or 0),
+        "expires_at": now + float(expires_in or DEFAULT_LONG_LIVED_SECONDS),
         "obtained_at": now,
         "pages": pages,
     }
