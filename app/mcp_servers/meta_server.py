@@ -144,13 +144,30 @@ async def _resolve_instagram(pagina: str | None) -> tuple[str, dict]:
     return ig_id, page
 
 
+# Codici di errore Graph API per un access token davvero non valido/scaduto/revocato (famiglia
+# 'OAuthException', codice 190). Qualunque altro errore — inclusi altri OAuthException, es.
+# codice 10 "permission denied" per un permesso non concesso al token — NON significa token
+# scaduto: va lasciato passare con il messaggio originale di Meta, altrimenti un problema di
+# permessi (spesso specifico di una singola azione, es. eliminare un media Instagram) sembra
+# un problema di autorizzazione generale e manda a rifare inutilmente il consenso OAuth.
+_INVALID_TOKEN_ERROR_CODE = 190
+
+
 async def _graph_request(method: str, path: str, access_token: str, **kwargs) -> httpx.Response:
     params = kwargs.pop("params", {}) or {}
     params["access_token"] = access_token
     async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
         resp = await client.request(method, f"{GRAPH_BASE}/{path}", params=params, **kwargs)
-    if resp.status_code == 401 or (resp.status_code == 400 and "OAuthException" in resp.text):
+    if resp.status_code == 401:
         raise AuthExpiredError("Meta ha rifiutato il token: l'autorizzazione potrebbe essere revocata, rifai il consenso OAuth.")
+    if resp.status_code == 400:
+        try:
+            error = resp.json().get("error") or {}
+        except ValueError:
+            error = {}
+        if error.get("code") == _INVALID_TOKEN_ERROR_CODE:
+            detail = error.get("message") or "token non valido"
+            raise AuthExpiredError(f"Meta ha rifiutato il token ({detail}): rifai il consenso OAuth.")
     return resp
 
 
