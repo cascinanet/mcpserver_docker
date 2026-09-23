@@ -51,10 +51,15 @@
              value="{{ server.env.get('LINKEDIN_CLIENT_SECRET', '') if server else '' }}"
              placeholder="dalla scheda Auth, icona occhio per rivelarlo">
 
-      <label>ID Pagina aziendale (solo il numero, da <code>urn:li:organization:NUMERO</code>)</label>
+      <label>Pagine aziendali (ID numerico da <code>urn:li:organization:NUMERO</code>)</label>
       <input type="text" name="linkedin_org_id"
              value="{{ server.env.get('LINKEDIN_ORG_ID', '') if server else '' }}"
-             placeholder="es. 12345678">
+             placeholder="es. 12345678  oppure  cascinanet=12345678, pixelio=87654321">
+      <p class="muted" style="margin:6px 0 0;">
+        Più Pagine: <code>etichetta=ID</code> separate da virgola. Un solo consenso OAuth vale per
+        tutte le Pagine che amministri; nei tool indichi su quale lavorare con il parametro
+        <code>pagina</code>. Il tool <code>elenco_pagine</code> mostra gli ID di quelle che amministri.
+      </p>
       <p class="muted" style="margin:6px 0 0;">
         Per opzioni avanzate (<code>LINKEDIN_SCOPES</code> per scope OAuth diversi,
         <code>LINKEDIN_API_VERSION</code> se la versione API di default viene dismessa) usa il

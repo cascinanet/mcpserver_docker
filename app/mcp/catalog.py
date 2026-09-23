@@ -103,7 +103,7 @@ SERVER_TYPES: list[ServerType] = [
         args=["-m", "app.mcp_servers.linkedin_server", "--server-id", "<SERVER_ID>"],
         credential_kind="none",
         hint="Compila Client ID, Client Secret (dall'app LinkedIn Developer, scheda Auth) e "
-             "ID Pagina qui sotto. Salva, poi usa il pulsante 'Autorizza con LinkedIn' più "
+             "Pagine qui sotto (una sola: l'ID; più pagine: 'etichetta=ID, etichetta2=ID2'). Salva, poi usa il pulsante 'Autorizza con LinkedIn' più "
              "sotto per completare il consenso OAuth. Richiede che LinkedIn abbia approvato "
              "per l'app l'accesso al prodotto 'Community Management API'.",
     ),

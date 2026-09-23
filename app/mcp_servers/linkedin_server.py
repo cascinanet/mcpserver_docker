@@ -11,8 +11,10 @@ l'accesso al prodotto "Community Management API". Alcuni nomi di campo (in parti
 al primo test dal vivo.
 
 Configurazione (env):
-    LINKEDIN_ORG_ID       obbligatoria: ID numerico della Pagina aziendale
-                          (da un URN tipo 'urn:li:organization:12345678' -> solo '12345678')
+    LINKEDIN_ORG_ID       obbligatoria: Pagina/e aziendali. Una sola: l'ID numerico (da un URN
+                          tipo 'urn:li:organization:12345678' -> '12345678'). Più pagine con
+                          etichetta: 'cascinanet=12345678, pixelio=87654321'. Il token OAuth è
+                          dell'utente, quindi vale per tutte le pagine che amministra.
     LINKEDIN_API_VERSION  opzionale: header LinkedIn-Version (YYYYMM), default in LINKEDIN_VERSION
     DATA_DIR              ereditata dall'hub, usata per individuare il file token
 Argomenti:
@@ -49,7 +51,6 @@ API_BASE = "https://api.linkedin.com/rest"
 LINKEDIN_VERSION = os.environ.get("LINKEDIN_API_VERSION", "").strip() or "202606"
 _TIMEOUT = 30.0
 
-ORG_ID = os.environ.get("LINKEDIN_ORG_ID", "")
 SERVER_ID: str = ""  # impostato in main() da --server-id
 
 
@@ -61,10 +62,56 @@ class AuthExpiredError(Exception):
     """Il token è scaduto e non è stato possibile rinnovarlo automaticamente."""
 
 
-def _author_urn() -> str:
-    if not ORG_ID:
-        raise ConfigError("Configurazione incompleta: manca LINKEDIN_ORG_ID.")
-    return f"urn:li:organization:{ORG_ID}"
+_ORG_PREFIX = "urn:li:organization:"
+
+
+def _clean_org_id(value: str) -> str:
+    value = value.strip()
+    return value[len(_ORG_PREFIX):] if value.startswith(_ORG_PREFIX) else value
+
+
+def _parse_pages(raw: str) -> dict[str, str]:
+    """'12345' -> {'principale': '12345'}; 'a=1, b=2' -> {'a': '1', 'b': '2'} (etichette in minuscolo)."""
+    pages: dict[str, str] = {}
+    for item in raw.replace(";", ",").split(","):
+        item = item.strip()
+        if not item:
+            continue
+        if "=" in item:
+            label, org_id = item.split("=", 1)
+            pages[label.strip().lower()] = _clean_org_id(org_id)
+        else:
+            pages["principale" if not pages else _clean_org_id(item)] = _clean_org_id(item)
+    return pages
+
+
+PAGES = _parse_pages(os.environ.get("LINKEDIN_ORG_ID", ""))
+
+
+def _pages_hint() -> str:
+    return ", ".join(f"{label} ({org_id})" for label, org_id in PAGES.items()) or "nessuna"
+
+
+def _author_urn(pagina: str | None) -> str:
+    """URN della Pagina su cui operare. Con più pagine configurate 'pagina' è obbligatoria: meglio
+    un errore che un post pubblicato sulla Pagina sbagliata."""
+    pagina = (pagina or "").strip()
+    if not pagina:
+        if not PAGES:
+            raise ConfigError("Configurazione incompleta: manca LINKEDIN_ORG_ID (ID della Pagina aziendale).")
+        if len(PAGES) > 1:
+            raise ConfigError(
+                f"Sono configurate più Pagine: indica il parametro 'pagina'. Disponibili: {_pages_hint()}."
+            )
+        return _ORG_PREFIX + next(iter(PAGES.values()))
+    org_id = PAGES.get(pagina.lower())
+    if org_id is None:
+        candidate = _clean_org_id(pagina)
+        if not candidate.isdigit():
+            raise ConfigError(f"Pagina '{pagina}' non trovata. Disponibili: {_pages_hint()}.")
+        # ID numerico non configurato: consentito, i permessi li verifica comunque LinkedIn.
+        org_id = candidate
+    return _ORG_PREFIX + org_id
 
 
 async def _get_access_token() -> str:
@@ -134,12 +181,13 @@ def _urn_encode(urn: str) -> str:
     return urllib.parse.quote(urn, safe="")
 
 
-async def _crea_post(testo: str, visibilita: str) -> dict:
+async def _crea_post(testo: str, visibilita: str, pagina: str | None) -> dict:
     if not testo or not testo.strip():
         raise ValueError("crea_post richiede il parametro 'testo'.")
     visibilita = visibilita if visibilita in {"PUBLIC", "LOGGED_IN"} else "PUBLIC"
+    author = _author_urn(pagina)
     body = {
-        "author": _author_urn(),
+        "author": author,
         "commentary": testo,
         "visibility": visibilita,
         "distribution": {
@@ -154,20 +202,22 @@ async def _crea_post(testo: str, visibilita: str) -> dict:
     if resp.status_code not in (200, 201):
         raise RuntimeError(f"LinkedIn ha risposto {resp.status_code} creando il post: {resp.text[:300]}")
     post_id = resp.headers.get("x-restli-id") or resp.headers.get("x-linkedin-id")
-    return {"ok": True, "post_id": post_id, "visibilita": visibilita}
+    return {"ok": True, "post_id": post_id, "pagina": author, "visibilita": visibilita}
 
 
-async def _elenco_post(limite: int) -> dict:
+async def _elenco_post(limite: int, pagina: str | None) -> dict:
     limite = max(1, min(limite or 20, 100))
     # Rest.li 2.0 vuole l'URN codificato nella query (':' -> %3A): costruita a mano perché
     # httpx lascerebbe i ':' in chiaro.
-    query = f"q=author&author={_urn_encode(_author_urn())}&count={limite}&sortBy=LAST_MODIFIED"
+    author = _author_urn(pagina)
+    query = f"q=author&author={_urn_encode(author)}&count={limite}&sortBy=LAST_MODIFIED"
     resp = await _request("GET", f"/posts?{query}", headers={"X-RestLi-Method": "FINDER"})
     if resp.status_code >= 400:
         raise RuntimeError(f"LinkedIn ha risposto {resp.status_code} elencando i post: {resp.text[:300]}")
     data = resp.json()
     elements = data.get("elements", []) if isinstance(data, dict) else []
     return {
+        "pagina": author,
         "post": [
             {
                 "id": e.get("id"),
@@ -212,16 +262,52 @@ async def _statistiche_post(post_id: str) -> dict:
     }
 
 
+async def _elenco_pagine() -> dict:
+    """Pagine configurate + (se LinkedIn lo consente) tutte quelle che l'utente autorizzato
+    amministra, così gli ID si scoprono senza cercarli a mano."""
+    configured = [{"etichetta": label, "id": org_id} for label, org_id in PAGES.items()]
+    result: dict = {"configurate": configured}
+    resp = await _request(
+        "GET", "/organizationAcls?q=roleAssignee&role=ADMINISTRATOR&state=APPROVED",
+        headers={"X-RestLi-Method": "FINDER"},
+    )
+    if resp.status_code >= 400:
+        result["nota"] = f"Elenco delle Pagine amministrate non disponibile (LinkedIn {resp.status_code})."
+        return result
+    labels_by_id = {org_id: label for label, org_id in PAGES.items()}
+    amministrate = []
+    for element in (resp.json() or {}).get("elements", []):
+        urn = element.get("organization") or element.get("organizationalTarget") or ""
+        org_id = _clean_org_id(urn)
+        if not org_id:
+            continue
+        info = {"id": org_id, "etichetta": labels_by_id.get(org_id)}
+        org_resp = await _request("GET", f"/organizations/{org_id}")
+        if org_resp.status_code < 400:
+            org = org_resp.json() or {}
+            info["nome"] = org.get("localizedName")
+            info["vanity_name"] = org.get("vanityName")
+        amministrate.append(info)
+    result["amministrate"] = amministrate
+    return result
+
+
+_PAGINA_PROP = {
+    "type": "string",
+    "description": "Etichetta o ID della Pagina (vedi elenco_pagine). Obbligatoria se sono configurate più Pagine.",
+}
+
 TOOLS = [
     types.Tool(
         name="crea_post",
-        description="Pubblica un nuovo post testuale sulla Pagina aziendale LinkedIn.",
+        description="Pubblica un nuovo post testuale su una Pagina aziendale LinkedIn.",
         inputSchema={
             "type": "object",
             "required": ["testo"],
             "properties": {
                 "testo": {"type": "string", "description": "Testo del post (supporta a-capo)."},
                 "visibilita": {"type": "string", "enum": ["PUBLIC", "LOGGED_IN"], "description": "Default: PUBLIC."},
+                "pagina": _PAGINA_PROP,
             },
         },
     ),
@@ -230,8 +316,17 @@ TOOLS = [
         description="Elenca gli ultimi post pubblicati dalla Pagina, più recenti prima.",
         inputSchema={
             "type": "object",
-            "properties": {"limite": {"type": "integer", "description": "Numero massimo di post (default 20, max 100)."}},
+            "properties": {
+                "limite": {"type": "integer", "description": "Numero massimo di post (default 20, max 100)."},
+                "pagina": _PAGINA_PROP,
+            },
         },
+    ),
+    types.Tool(
+        name="elenco_pagine",
+        description="Elenca le Pagine aziendali configurate (con etichetta) e quelle che l'utente "
+                    "autorizzato amministra su LinkedIn, con nome e ID.",
+        inputSchema={"type": "object", "properties": {}},
     ),
     types.Tool(
         name="elimina_post",
@@ -254,8 +349,9 @@ TOOLS = [
 ]
 
 _DISPATCH = {
-    "crea_post": lambda a: _crea_post(a.get("testo", ""), a.get("visibilita", "PUBLIC")),
-    "elenco_post": lambda a: _elenco_post(a.get("limite")),
+    "crea_post": lambda a: _crea_post(a.get("testo", ""), a.get("visibilita", "PUBLIC"), a.get("pagina")),
+    "elenco_post": lambda a: _elenco_post(a.get("limite"), a.get("pagina")),
+    "elenco_pagine": lambda a: _elenco_pagine(),
     "elimina_post": lambda a: _elimina_post(a.get("post_id", "")),
     "statistiche_post": lambda a: _statistiche_post(a.get("post_id", "")),
 }

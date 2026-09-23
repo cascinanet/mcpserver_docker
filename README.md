@@ -136,14 +136,24 @@ dal pannello admin.
 **Setup lato hub**:
 1. Crea il server, tipo **LinkedIn** → in Env imposta `LINKEDIN_CLIENT_ID`,
    `LINKEDIN_CLIENT_SECRET`, `LINKEDIN_ORG_ID` (solo il numero dell'URN
-   `urn:li:organization:NUMERO` della Pagina) → Salva.
+   `urn:li:organization:NUMERO` della Pagina; per più Pagine `cascinanet=123, pixelio=456`) → Salva.
 2. Clicca **"Autorizza con LinkedIn"**: reindirizza al consenso OAuth, poi torna
    automaticamente al pannello con l'esito.
 3. Un task in background rinnova l'access token (~60 giorni di validità) prima che scada,
    usando il refresh token; se il rinnovo fallisce (es. refresh token scaduto, ~1 anno),
    va rifatto il consenso dal pulsante.
 
-Tool esposti: `crea_post`, `elenco_post`, `elimina_post`, `statistiche_post`.
+Tool esposti: `crea_post`, `elenco_post`, `elenco_pagine`, `elimina_post`, `statistiche_post`.
+
+- **Più Pagine con un solo server**: il token OAuth è dell'utente, quindi vale per tutte le
+  Pagine che amministra. In `LINKEDIN_ORG_ID` elenca le Pagine come `etichetta=ID` separate da
+  virgola; `crea_post` ed `elenco_post` accettano il parametro `pagina` (etichetta o ID). Con
+  più Pagine configurate `pagina` è **obbligatorio**: senza, il tool non pubblica e chiede su
+  quale Pagina operare. `elenco_pagine` mostra le Pagine configurate e quelle che l'utente
+  amministra (nome e ID), utile per trovare gli ID. `elimina_post` e `statistiche_post` non
+  ne hanno bisogno: l'URN del post identifica già la Pagina.
+- Un server separato per Pagina serve solo se persone diverse devono accedere a Pagine
+  diverse (ogni server ha il suo token dell'hub).
 
 - **Token OAuth mai in chiaro nei log**: mascherati (`***`) sia negli errori del server sia
   (per `access_token`/`refresh_token`/client secret) in ogni messaggio d'errore restituito.
