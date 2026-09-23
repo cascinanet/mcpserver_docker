@@ -253,6 +253,12 @@ Tool esposti: `crea_post_facebook`, `elenco_post_facebook`, `crea_post_instagram
   revocato, rifai il consenso" anche quando il token era valido (riprodotto dal vivo:
   `crea_post_instagram` riusciva, `elimina_post` sullo stesso post/stesso token falliva con
   quel messaggio fuorviante).
+- **`expires_in` mancante nella risposta di Meta non vuol dire "scade subito"**: riautorizzando
+  un utente che ha già un token valido, la richiesta di estensione (`fb_exchange_token`) può
+  riuscire senza restituire `expires_in` (o con `0`) — riprodotto dal vivo: il pannello segnava
+  "token scaduto" pochi secondi dopo un'autorizzazione appena completata, mentre i tool
+  continuavano a funzionare. In questo caso l'hub assume la durata standard di 60 giorni invece
+  di trattarlo come già scaduto; un valore negativo (davvero scaduto) resta segnalato come tale.
 - **Token mai in chiaro nei log**: mascherati (`***`) sia negli errori del server sia (token
   utente, token di Pagina, client secret) in ogni messaggio d'errore restituito.
 - **`PUBLIC_BASE_URL`**: stessa variabile usata da LinkedIn — deve corrispondere esattamente
