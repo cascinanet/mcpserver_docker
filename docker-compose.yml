@@ -1,10 +1,12 @@
 services:
   mcphub:
     build: .
-    image: mcpserver_docker:latest
+    image: mcphub:latest
+    # Stesso nome del container avviato a mano in produzione: compose lo sostituisce.
+    container_name: mcphub
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:${MCPHUB_PORT:-8070}:8000"
     environment:
       - SECRET_KEY=${SECRET_KEY}
       - DATA_DIR=/data
@@ -13,7 +15,6 @@ services:
       - BOOTSTRAP_ADMIN_PASSWORD=${BOOTSTRAP_ADMIN_PASSWORD:-admin}
       - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-}
     volumes:
-      - mcphub_data:/data
-
-volumes:
-  mcphub_data:
+      # Cartella sull'host (non volume nominato): non dipende dal nome della cartella del
+      # progetto, quindi un deploy da un percorso diverso ritrova sempre gli stessi dati.
+      - ${MCPHUB_DATA_DIR:-/var/lib/mcphub-data}:/data

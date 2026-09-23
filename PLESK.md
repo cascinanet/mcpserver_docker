@@ -28,21 +28,27 @@ Variabili minime da impostare in `.env` (lette da `docker-compose.yml`):
 - `BOOTSTRAP_ADMIN_USERNAME` / `BOOTSTRAP_ADMIN_PASSWORD` — credenziali del primo admin
   (cambiale subito dopo il primo login da **Cambia password**)
 
-Il container espone la porta **8000 solo su localhost** (`127.0.0.1:8000`); il traffico
-esterno passa sempre dal reverse proxy nginx di Plesk davanti al dominio.
+Il container si chiama `mcphub` ed è esposto **solo su localhost**, porta `127.0.0.1:8070`
+(sovrascrivibile con `MCPHUB_PORT` in `.env`); il traffico esterno passa sempre dal reverse
+proxy nginx di Plesk davanti al dominio.
 
 ## 2. Persistenza dati
 
-`DATA_DIR=/data` dentro il container è montato sul volume Docker `mcphub_data`
-(vedi `docker-compose.yml`). Contiene `servers.json`, `users.json`, le credenziali
-per-server (`creds/<id>.json`) e `runtime.json`. **Non va perso nei rebuild/redeploy**:
-il volume nominato garantisce questo, basta non fare `docker compose down -v`.
+`DATA_DIR=/data` dentro il container è montato sulla cartella dell'host
+`/var/lib/mcphub-data` (sovrascrivibile con `MCPHUB_DATA_DIR` in `.env`). Contiene
+`servers.json`, `users.json`, le credenziali per-server (`creds/<id>.json`) e `runtime.json`.
+Essendo una cartella dell'host, sopravvive a rebuild e redeploy e non dipende dal percorso
+da cui lanci `docker compose`. Backup:
+
+```bash
+tar czf /root/mcphub-data-backup-$(date +%F).tgz -C /var/lib mcphub-data
+```
 
 ## 3. Collegare il dominio Plesk (Docker Proxy Rules)
 
 In Plesk: **Domini → mcp.tuodominio.it → Docker (o "Proxy Rules" nell'estensione Docker)**:
 
-- Container target: `mcphub` sulla porta `8000`
+- Container target: `mcphub` sulla porta `8070` (lato host)
 - Abilita **SSL/TLS** con Let's Encrypt dal pannello dominio (niente certbot manuale:
   lo gestisce Plesk).
 
@@ -69,13 +75,22 @@ token) si fa dall'admin UI come descritto nel [README](README.md).
 
 ## Aggiornare il codice
 
+Se il repository è collegato da **Plesk → Git**: clicca **Estrai ora**, poi via SSH (root)
+nella cartella del deploy:
+
 ```bash
-cd mcpserver_docker
-git pull
 docker compose up -d --build
 ```
 
-Il volume `mcphub_data` non viene toccato dal rebuild.
+Altrimenti `git pull` al posto di "Estrai ora". La cartella dati non viene toccata dal rebuild.
+
+**Prima volta con compose** su un'installazione avviata a mano con `docker run`: compose non
+può riusare un container che non ha creato. Rimuovilo prima (i dati restano sull'host):
+
+```bash
+docker rm -f mcphub
+docker compose up -d --build
+```
 
 ## Note
 
