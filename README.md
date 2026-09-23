@@ -145,6 +145,15 @@ dal pannello admin.
 
 Tool esposti: `crea_post`, `elenco_post`, `elenco_pagine`, `elimina_post`, `statistiche_post`.
 
+- **Testo e caratteri speciali**: il campo del post è in formato *little text* di LinkedIn,
+  dove `( ) [ ] { } < > @ # | * _ ~ \` sono riservati. Senza la `\` davanti LinkedIn **tronca
+  in silenzio** il testo al primo carattere che non riesce a interpretare. `crea_post` li protegge
+  automaticamente e converte `#parola` in hashtag; `elenco_post` restituisce il testo leggibile.
+  Le menzioni `@` non sono supportate e vengono pubblicate come testo semplice.
+- **Verifica dopo la pubblicazione**: `crea_post` rilegge il post e confronta il testo salvato
+  con quello inviato (ignorando i link, che LinkedIn accorcia in `lnkd.in`). Se sono diversi
+  risponde `ok: false` con `testo_salvato` e un avviso: il post però è già online, valuta se
+  eliminarlo.
 - **Più Pagine con un solo server**: il token OAuth è dell'utente, quindi vale per tutte le
   Pagine che amministra. In `LINKEDIN_ORG_ID` elenca le Pagine come `etichetta=ID` separate da
   virgola; `crea_post` ed `elenco_post` accettano il parametro `pagina` (etichetta o ID). Con
