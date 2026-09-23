@@ -32,10 +32,10 @@ logger = logging.getLogger("mcp.linkedin_oauth")
 
 AUTH_URL = "https://www.linkedin.com/oauth/v2/authorization"
 TOKEN_URL = "https://www.linkedin.com/oauth/v2/accessToken"
-# w_organization_social/r_organization_social/rw_organization_admin richiedono il prodotto
-# "Community Management API" approvato; openid/profile funzionano anche senza (utili per
-# verificare che il flusso OAuth di base sia cablato correttamente nel frattempo).
-DEFAULT_SCOPES = "openid profile w_organization_social r_organization_social rw_organization_admin"
+# Scope concessi dal prodotto "Community Management API". Niente openid/profile: appartengono
+# a un prodotto separato ("Sign In with LinkedIn using OpenID Connect") e, se l'app non lo
+# ha, LinkedIn rifiuta l'intero consenso con unauthorized_scope_error.
+DEFAULT_SCOPES = "w_organization_social r_organization_social rw_organization_admin"
 
 REFRESH_MARGIN_SECONDS = 3 * 24 * 3600  # rinnova quando mancano meno di 3 giorni alla scadenza
 SCHEDULER_CHECK_INTERVAL = 3600  # ogni ora

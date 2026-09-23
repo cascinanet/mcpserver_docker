@@ -6,15 +6,14 @@ dal flusso di autorizzazione dell'hub (app/linkedin_oauth.py, pulsante "Autorizz
 LinkedIn" nel form del server) — DATA_DIR/creds/<server_id>-linkedin.json.
 
 IMPORTANTE: le chiamate a /rest/posts richiedono che LinkedIn abbia approvato per l'app
-l'accesso al prodotto "Community Management API" (processo di review lato LinkedIn, non
-immediato). Il codice è scritto secondo la documentazione ufficiale ma NON è stato
-verificato con una chiamata reale approvata: alcuni nomi di campo (in particolare per
+l'accesso al prodotto "Community Management API". Alcuni nomi di campo (in particolare per
 'statistiche_post', area meno stabile delle API LinkedIn) potrebbero richiedere aggiustamenti
 al primo test dal vivo.
 
 Configurazione (env):
     LINKEDIN_ORG_ID       obbligatoria: ID numerico della Pagina aziendale
                           (da un URN tipo 'urn:li:organization:12345678' -> solo '12345678')
+    LINKEDIN_API_VERSION  opzionale: header LinkedIn-Version (YYYYMM), default in LINKEDIN_VERSION
     DATA_DIR              ereditata dall'hub, usata per individuare il file token
 Argomenti:
     --server-id <id>      obbligatorio: ID del server nell'hub, per il nome del file token
@@ -44,7 +43,10 @@ logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(levelname)s lin
 logger = logging.getLogger("linkedin-mcp")
 
 API_BASE = "https://api.linkedin.com/rest"
-LINKEDIN_VERSION = "202401"  # versione API "YYYYMM"; LinkedIn la aggiorna periodicamente
+# Versione API "YYYYMM": LinkedIn pubblica una versione al mese e ognuna resta attiva circa
+# un anno, poi le chiamate falliscono con 426. Sovrascrivibile via env LINKEDIN_API_VERSION
+# senza toccare il codice quando questa default va in dismissione.
+LINKEDIN_VERSION = os.environ.get("LINKEDIN_API_VERSION", "").strip() or "202606"
 _TIMEOUT = 30.0
 
 ORG_ID = os.environ.get("LINKEDIN_ORG_ID", "")
@@ -96,20 +98,28 @@ async def _get_access_token() -> str:
     return tokens["access_token"]
 
 
-def _headers(token: str) -> dict:
-    return {
+def _headers(token: str, extra: dict | None = None) -> dict:
+    headers = {
         "Authorization": f"Bearer {token}",
         "LinkedIn-Version": LINKEDIN_VERSION,
         "X-Restli-Protocol-Version": "2.0.0",
         "Content-Type": "application/json",
     }
+    if extra:
+        headers.update(extra)
+    return headers
 
 
-async def _request(method: str, path: str, **kwargs) -> httpx.Response:
+async def _request(method: str, path: str, headers: dict | None = None, **kwargs) -> httpx.Response:
     token = await _get_access_token()
     url = f"{API_BASE}{path}"
     async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-        resp = await client.request(method, url, headers=_headers(token), **kwargs)
+        resp = await client.request(method, url, headers=_headers(token, headers), **kwargs)
+    if resp.status_code == 426:
+        raise ConfigError(
+            f"LinkedIn ha risposto 426: la versione API '{LINKEDIN_VERSION}' non è più attiva. "
+            "Imposta nelle Env del server LINKEDIN_API_VERSION con una versione recente (YYYYMM)."
+        )
     if resp.status_code == 401:
         raise AuthExpiredError("LinkedIn ha rifiutato il token (401): l'autorizzazione potrebbe essere revocata, rifai il consenso OAuth.")
     if resp.status_code == 403:
@@ -149,8 +159,10 @@ async def _crea_post(testo: str, visibilita: str) -> dict:
 
 async def _elenco_post(limite: int) -> dict:
     limite = max(1, min(limite or 20, 100))
-    params = {"author": _author_urn(), "q": "author", "count": limite, "sortBy": "LAST_MODIFIED"}
-    resp = await _request("GET", "/posts", params=params)
+    # Rest.li 2.0 vuole l'URN codificato nella query (':' -> %3A): costruita a mano perché
+    # httpx lascerebbe i ':' in chiaro.
+    query = f"q=author&author={_urn_encode(_author_urn())}&count={limite}&sortBy=LAST_MODIFIED"
+    resp = await _request("GET", f"/posts?{query}", headers={"X-RestLi-Method": "FINDER"})
     if resp.status_code >= 400:
         raise RuntimeError(f"LinkedIn ha risposto {resp.status_code} elencando i post: {resp.text[:300]}")
     data = resp.json()

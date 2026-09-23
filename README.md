@@ -151,10 +151,14 @@ Tool esposti: `crea_post`, `elenco_post`, `elimina_post`, `statistiche_post`.
   dell'installazione (dominio + schema, senza slash finale) perché il redirect URI OAuth
   corrisponda esattamente a quello registrato in LinkedIn — importante dietro un reverse
   proxy TLS come quello di Plesk.
-- **Non ancora verificato dal vivo**: il codice segue la documentazione ufficiale di LinkedIn
-  ma non è stato testato contro l'API reale (in attesa di approvazione del prodotto
-  Community Management). In particolare `statistiche_post` usa un endpoint (`socialActions`)
-  storicamente meno stabile: verifica i nomi dei campi al primo utilizzo reale.
+- **Versione API**: ogni chiamata invia l'header `LinkedIn-Version` (formato `YYYYMM`).
+  LinkedIn tiene attiva ogni versione circa un anno; quando la default del codice viene
+  dismessa i tool rispondono con un errore 426 esplicito. Per aggiornarla senza rilasciare
+  codice imposta `LINKEDIN_API_VERSION` (es. `202609`) nelle Env extra del server.
+- **Scope OAuth**: di default `w_organization_social r_organization_social rw_organization_admin`
+  (quelli del prodotto Community Management API). Sovrascrivibili con `LINKEDIN_SCOPES`.
+- **Primo test dal vivo**: `statistiche_post` usa un endpoint (`socialActions`) storicamente
+  meno stabile: verifica i nomi dei campi al primo utilizzo reale.
 
 ## Struttura
 
