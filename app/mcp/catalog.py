@@ -105,8 +105,7 @@ SERVER_TYPES: list[ServerType] = [
         hint="Compila Client ID, Client Secret (dall'app LinkedIn Developer, scheda Auth) e "
              "ID Pagina qui sotto. Salva, poi usa il pulsante 'Autorizza con LinkedIn' più "
              "sotto per completare il consenso OAuth. Richiede che LinkedIn abbia approvato "
-             "per l'app l'accesso al prodotto 'Community Management API' (review lato "
-             "LinkedIn, non immediata).",
+             "per l'app l'accesso al prodotto 'Community Management API'.",
     ),
     ServerType(
         key="custom",

@@ -56,8 +56,9 @@
              value="{{ server.env.get('LINKEDIN_ORG_ID', '') if server else '' }}"
              placeholder="es. 12345678">
       <p class="muted" style="margin:6px 0 0;">
-        Per opzioni avanzate (es. <code>LINKEDIN_SCOPES</code> per testare il consenso OAuth prima
-        dell'approvazione di LinkedIn) usa il campo "Env extra (JSON)" nelle Impostazioni tecniche.
+        Per opzioni avanzate (<code>LINKEDIN_SCOPES</code> per scope OAuth diversi,
+        <code>LINKEDIN_API_VERSION</code> se la versione API di default viene dismessa) usa il
+        campo "Env extra (JSON)" nelle Impostazioni tecniche.
       </p>
     </div>
 

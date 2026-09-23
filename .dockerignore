@@ -10,3 +10,6 @@ env/
 *.log
 README.md
 PLESK.md
+# Clone/immagini esportate lasciati nella cartella di deploy: non servono alla build
+mcpserver_docker/
+*.tar
