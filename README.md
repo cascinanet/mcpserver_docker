@@ -238,10 +238,21 @@ Tool esposti: `crea_post_facebook`, `elenco_post_facebook`, `crea_post_instagram
   - la pubblicazione video su Instagram, che Meta elabora in modo asincrono (il tool attende
     fino a ~30 secondi che sia pronta, poi restituisce un errore invece di pubblicare un video
     non pronto — per video grandi potrebbe non bastare);
-  - `elimina_post` su un media Instagram, che richiede il permesso `instagram_manage_contents`
-    (la documentazione Meta su questo punto è meno chiara che per la pubblicazione);
+  - `elimina_post` su un media Instagram: confermato dal vivo che il permesso attuale
+    (`instagram_content_publish`) non basta — l'errore preciso restituito da Meta non è
+    ancora stato letto (vedi nota sotto), verificalo al primo uso reale dopo il deploy di
+    questa correzione;
   - `statistiche_post`, che prova prima i campi di un post Facebook e ripiega su quelli
     Instagram se il primo tentativo fallisce.
+- **Un token "scaduto" non è sempre davvero scaduto**: i tool distinguono un token
+  effettivamente non valido/scaduto (Graph API, errore `OAuthException` codice `190`, o HTTP
+  401) da qualunque altro errore `OAuthException` — tipicamente un permesso mancante per
+  quella singola azione (es. `elimina_post` su Instagram). Solo il primo caso propone di
+  rifare il consenso OAuth; il secondo restituisce il messaggio originale di Meta. Prima di
+  questa correzione i due casi venivano confusi: un errore di permessi appariva come "token
+  revocato, rifai il consenso" anche quando il token era valido (riprodotto dal vivo:
+  `crea_post_instagram` riusciva, `elimina_post` sullo stesso post/stesso token falliva con
+  quel messaggio fuorviante).
 - **Token mai in chiaro nei log**: mascherati (`***`) sia negli errori del server sia (token
   utente, token di Pagina, client secret) in ogni messaggio d'errore restituito.
 - **`PUBLIC_BASE_URL`**: stessa variabile usata da LinkedIn — deve corrispondere esattamente
