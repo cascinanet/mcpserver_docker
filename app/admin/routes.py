@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 
 from app import backup as backup_mod
 from app import linkedin_oauth
+from app import meta_oauth
 from app import runtime
 from app.auth import security
 from app.auth.dependencies import require_login
@@ -37,6 +38,7 @@ def _form_context(request: Request, user: str, server: MCPServer | None, error: 
             data["args"] = [a.replace("<SERVER_ID>", server.id) for a in data["args"]]
         server_types.append(data)
     linkedin_status = linkedin_oauth.status(server.id) if server and server.type == "linkedin" else None
+    meta_status = meta_oauth.status(server.id) if server and server.type == "meta" else None
     return {
         "request": request,
         "user": user,
@@ -46,6 +48,8 @@ def _form_context(request: Request, user: str, server: MCPServer | None, error: 
         "default_type": catalog.default_type().key,
         "linkedin_status": linkedin_status,
         "linkedin_redirect_uri": f"{_public_base_url(request)}/oauth/linkedin/callback",
+        "meta_status": meta_status,
+        "meta_redirect_uri": f"{_public_base_url(request)}/oauth/meta/callback",
     }
 
 
@@ -121,6 +125,9 @@ async def save_server(
     linkedin_client_id: str = Form(""),
     linkedin_client_secret: str = Form(""),
     linkedin_org_id: str = Form(""),
+    meta_app_id: str = Form(""),
+    meta_app_secret: str = Form(""),
+    meta_pages: str = Form(""),
     user: str = Depends(require_login),
 ):
     server_id = id.strip()
@@ -169,6 +176,10 @@ async def save_server(
         env_dict["LINKEDIN_CLIENT_ID"] = linkedin_client_id.strip()
         env_dict["LINKEDIN_CLIENT_SECRET"] = linkedin_client_secret.strip()
         env_dict["LINKEDIN_ORG_ID"] = linkedin_org_id.strip()
+    if server_type.key == "meta":
+        env_dict["META_APP_ID"] = meta_app_id.strip()
+        env_dict["META_APP_SECRET"] = meta_app_secret.strip()
+        env_dict["META_PAGES"] = meta_pages.strip()
 
     store.upsert_server(build(env_dict, has_credentials))
     return RedirectResponse("/", status_code=303)
@@ -255,6 +266,68 @@ async def linkedin_deauthorize(server_id: str, user: str = Depends(require_login
     if not server or server.type != "linkedin":
         raise HTTPException(status_code=404, detail="Server LinkedIn non trovato.")
     linkedin_oauth.delete_tokens(server_id)
+    return RedirectResponse(f"/servers/{server_id}/edit", status_code=303)
+
+
+@router.get("/servers/{server_id}/meta/authorize")
+async def meta_authorize(server_id: str, request: Request, user: str = Depends(require_login)):
+    """Avvia il consenso OAuth: redirige il browser dell'admin a Meta."""
+    server = store.get_server(server_id)
+    if not server or server.type != "meta":
+        raise HTTPException(status_code=404, detail="Server Meta non trovato.")
+    if not server.env.get("META_APP_ID"):
+        raise HTTPException(status_code=400, detail="Imposta prima META_APP_ID nelle Env e salva.")
+    state = meta_oauth.make_state(server_id)
+    redirect_uri = f"{_public_base_url(request)}/oauth/meta/callback"
+    return RedirectResponse(meta_oauth.authorize_url(server, redirect_uri, state))
+
+
+@router.get("/oauth/meta/callback", response_class=HTMLResponse)
+async def meta_callback(
+    request: Request,
+    code: str = "",
+    state: str = "",
+    error: str = "",
+    error_description: str = "",
+    user: str = Depends(require_login),
+):
+    """Riceve il redirect da Meta, scambia il code per il token (esteso a lunga durata) e
+    scopre Pagine/Instagram collegati."""
+
+    def _bounce(message: str, server_id: str | None = None, code_status: int = 400):
+        back = f"/servers/{server_id}/edit" if server_id else "/"
+        return HTMLResponse(
+            f"<p>{message}</p><p><a href='{back}'>Torna al pannello</a></p>", status_code=code_status
+        )
+
+    if error:
+        return _bounce(f"Meta ha rifiutato l'autorizzazione: {error} — {error_description}")
+
+    server_id = meta_oauth.consume_state(state)
+    if not server_id:
+        return _bounce("Sessione di autorizzazione scaduta o non valida (hai impiegato più di 10 minuti, o la pagina è stata aperta due volte). Riprova dal pulsante 'Autorizza con Meta'.")
+
+    server = store.get_server(server_id)
+    if not server or server.type != "meta":
+        return _bounce("Server Meta non trovato.", server_id)
+
+    redirect_uri = f"{_public_base_url(request)}/oauth/meta/callback"
+    try:
+        await meta_oauth.complete_authorization(server, server_id, code, redirect_uri)
+    except Exception as exc:  # noqa: BLE001
+        return _bounce(f"Scambio del code fallito: {exc}", server_id)
+
+    return RedirectResponse(f"/servers/{server_id}/edit?meta_authorized=1", status_code=303)
+
+
+@router.post("/servers/{server_id}/meta/deauthorize")
+async def meta_deauthorize(server_id: str, user: str = Depends(require_login)):
+    """Elimina il token salvato (revoca locale): il server smetterà di funzionare finché non
+    si rifà il consenso OAuth."""
+    server = store.get_server(server_id)
+    if not server or server.type != "meta":
+        raise HTTPException(status_code=404, detail="Server Meta non trovato.")
+    meta_oauth.delete_tokens(server_id)
     return RedirectResponse(f"/servers/{server_id}/edit", status_code=303)
 
 

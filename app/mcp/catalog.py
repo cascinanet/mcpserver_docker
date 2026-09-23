@@ -108,6 +108,20 @@ SERVER_TYPES: list[ServerType] = [
              "per l'app l'accesso al prodotto 'Community Management API'.",
     ),
     ServerType(
+        key="meta",
+        label="Facebook + Instagram (pubblica e gestisci post)",
+        description="Crea, elenca ed elimina post/media su Pagine Facebook e sugli account Instagram "
+                    "Business collegati (Graph API).",
+        command="python3",
+        args=["-m", "app.mcp_servers.meta_server", "--server-id", "<SERVER_ID>"],
+        credential_kind="none",
+        hint="Compila App ID e Chiave segreta (da Meta for Developers, scheda Impostazioni di base) "
+             "e salva. Poi usa il pulsante 'Autorizza con Meta' più sotto: il consenso scopre da "
+             "solo le Pagine Facebook amministrate e gli account Instagram collegati (non vanno "
+             "inseriti a mano). Etichette opzionali per le Pagine in 'Pagine (etichette)' qui sotto. "
+             "Richiede che Meta abbia approvato per l'app i permessi di pubblicazione (App Review).",
+    ),
+    ServerType(
         key="custom",
         label="Personalizzato (comando manuale)",
         description="Definisci manualmente comando, argomenti ed env per un qualsiasi server MCP stdio.",

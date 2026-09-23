@@ -59,6 +59,7 @@ Definiti in [app/mcp/catalog.py](app/mcp/catalog.py). Aggiungere un tipo = aggiu
 | `sqlite_encrypted` | `python3 -m app.mcp_servers.sqlcipher_server` | — | DB cifrato **SQLCipher**: passphrase `key` per tool call (vedi sotto) |
 | `woocommerce` | `python3 -m app.mcp_servers.woocommerce_server` | `WC_SITE_URL`, `WC_CONSUMER_KEY`, `WC_CONSUMER_SECRET` (+ opzionali `WC_APP_USER`/`WC_APP_PASSWORD`) | vedi sotto |
 | `linkedin` | `python3 -m app.mcp_servers.linkedin_server` | `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET`, `LINKEDIN_ORG_ID` + autorizzazione OAuth (vedi sotto) | pubblica/gestisce post sulla Pagina aziendale |
+| `meta` | `python3 -m app.mcp_servers.meta_server` | `META_APP_ID`, `META_APP_SECRET` + autorizzazione OAuth (vedi sotto) | pubblica/gestisce post su Pagine Facebook e account Instagram Business collegati |
 | `custom` | manuale | — | qualsiasi server MCP stdio |
 
 ### SQLite cifrato (SQLCipher)
@@ -178,6 +179,79 @@ Tool esposti: `crea_post`, `elenco_post`, `elenco_pagine`, `elimina_post`, `stat
   (quelli del prodotto Community Management API). Sovrascrivibili con `LINKEDIN_SCOPES`.
 - **Primo test dal vivo**: `statistiche_post` usa un endpoint (`socialActions`) storicamente
   meno stabile: verifica i nomi dei campi al primo utilizzo reale.
+
+### Facebook + Instagram (Meta, Graph API)
+
+Server MCP custom incluso nel repo ([app/mcp_servers/meta_server.py](app/mcp_servers/meta_server.py))
+per creare/elencare/eliminare post su Pagine Facebook e sui relativi account Instagram
+Business/Creator collegati, tramite la **Graph API** di Meta. Come LinkedIn, l'autenticazione
+è **OAuth 2.0**: serve un'app Meta for Developers approvata e un consenso una tantum dal
+pannello admin. Un solo consenso vale per **entrambe** le piattaforme e per tutte le Pagine
+che l'utente amministra: gli account Instagram collegati si scoprono da soli, non vanno
+configurati a mano.
+
+**Vincolo di Instagram**: non esiste un endpoint per pubblicare post di solo testo. Ogni post
+richiede un'immagine o un video con URL pubblico raggiungibile da Meta (`crea_post_instagram`
+rifiuta la chiamata senza uno dei due).
+
+**Setup lato Meta** (esterno all'hub, richiede tempo):
+1. Crea un'app su [Meta for Developers](https://developers.facebook.com/apps), tipo
+   **Azienda**, poi aggiungi il prodotto **Facebook Login per Business** (non la variante
+   consumer: serve quella business per i permessi sulle Pagine).
+2. In **Impostazioni → Di base**: imposta **Dominio app** e **Privacy Policy URL**
+   (obbligatorio per la review), prendi **ID app** e **Chiave segreta app**.
+3. In **Facebook Login per Business → Impostazioni**, aggiungi tra i **Valid OAuth Redirect
+   URIs** l'URL `<PUBLIC_BASE_URL>/oauth/meta/callback`
+   (es. `https://servermcp.cascinanet.it/oauth/meta/callback`).
+4. Finché l'app è in modalità **Sviluppo**, il consenso funziona solo con gli account
+   aggiunti in **Ruoli app → Tester/Amministratori** — utile per collaudare prima della review.
+5. Per la pubblicazione in produzione serve la **App Review** sui permessi
+   `pages_manage_posts`, `instagram_basic`, `instagram_content_publish` (più lenta di quella
+   di LinkedIn: Meta chiede una demo del flusso d'uso).
+
+**Setup lato hub**:
+1. Crea il server, tipo **Facebook + Instagram** → in Env imposta `META_APP_ID`,
+   `META_APP_SECRET` → Salva.
+2. Clicca **"Autorizza con Meta"**: reindirizza al consenso OAuth, poi torna automaticamente
+   al pannello. A differenza di LinkedIn non c'è un ID Pagina da inserire prima: il consenso
+   legge da solo le Pagine amministrate (`/me/accounts`) e, per ciascuna, l'eventuale account
+   Instagram collegato (campo `instagram_business_account`).
+3. (Opzionale) Per usare un'etichetta comoda al posto dell'ID nei tool, imposta `META_PAGES`
+   come `cascinanet=<page_id>, pixelio=<page_id>` (gli ID si trovano con `elenco_pagine`).
+4. Meta non usa un refresh token separato come LinkedIn: un task in background ri-estende
+   periodicamente il token utente (valido ~60 giorni, rinnovabile finché non è scaduto) e
+   ri-legge Pagine/Instagram; se il rinnovo fallisce (token scaduto oltre la finestra
+   rinnovabile), va rifatto il consenso dal pulsante.
+
+Tool esposti: `crea_post_facebook`, `elenco_post_facebook`, `crea_post_instagram`,
+`elenco_post_instagram`, `elenco_pagine`, `elimina_post`, `statistiche_post`.
+
+- **Più Pagine con un solo server**: come per LinkedIn, il token è dell'utente e vale per
+  tutte le Pagine che amministra. Con più Pagine autorizzate il parametro `pagina` (etichetta
+  o ID) è **obbligatorio** su `crea_post_facebook`, `elenco_post_facebook`,
+  `crea_post_instagram` ed `elenco_post_instagram`: senza, il tool non pubblica e chiede su
+  quale Pagina operare. `elimina_post` e `statistiche_post` richiedono comunque `pagina` per
+  sapere quale token usare (a differenza di LinkedIn, dove basta l'URN del post).
+- **Non ancora verificato dal vivo** (nessuna app Meta approvata al momento di scrivere questo
+  codice): tutti i tool sono scritti secondo la documentazione ufficiale della Graph API, ma
+  vanno controllati al primo uso reale. In particolare:
+  - la pubblicazione video su Instagram, che Meta elabora in modo asincrono (il tool attende
+    fino a ~30 secondi che sia pronta, poi restituisce un errore invece di pubblicare un video
+    non pronto — per video grandi potrebbe non bastare);
+  - `elimina_post` su un media Instagram, che richiede il permesso `instagram_manage_contents`
+    (la documentazione Meta su questo punto è meno chiara che per la pubblicazione);
+  - `statistiche_post`, che prova prima i campi di un post Facebook e ripiega su quelli
+    Instagram se il primo tentativo fallisce.
+- **Token mai in chiaro nei log**: mascherati (`***`) sia negli errori del server sia (token
+  utente, token di Pagina, client secret) in ogni messaggio d'errore restituito.
+- **`PUBLIC_BASE_URL`**: stessa variabile usata da LinkedIn — deve corrispondere esattamente
+  al redirect URI registrato nell'app Meta.
+- **Versione API**: ogni chiamata usa la Graph API `v23.0` di default. Meta ritira le versioni
+  vecchie dopo circa 2 anni; per aggiornarla senza rilasciare codice imposta
+  `META_API_VERSION` (es. `v25.0`) nelle Env extra del server.
+- **Scope OAuth**: di default `pages_show_list pages_read_engagement pages_manage_posts
+  business_management instagram_basic instagram_content_publish`. Sovrascrivibili con
+  `META_SCOPES` nelle Env extra.
 
 ## Struttura
 
