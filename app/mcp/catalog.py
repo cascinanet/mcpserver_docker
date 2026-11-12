@@ -129,12 +129,12 @@ SERVER_TYPES: list[ServerType] = [
         command="python3",
         args=["-m", "app.mcp_servers.google_ads_server", "--server-id", "<SERVER_ID>"],
         credential_kind="none",
-        hint="Compila Client ID, Client Secret (OAuth, da Google Cloud Console), Developer Token "
-             "(da Google Ads → Strumenti → Centro API) e l'ID account Google Ads (10 cifre). Salva, "
-             "poi usa il pulsante 'Autorizza con Google' più sotto per completare il consenso OAuth. "
-             "Un Developer Token appena creato è di livello 'Basic' e funziona solo su account di "
-             "test: per l'account reale serve il livello 'Standard', approvato da Google (non "
-             "immediato). Account singolo: non supporta un manager account (MCC) con più account.",
+        hint="Compila Client ID e Client Secret (OAuth, da Google Cloud Console) e l'ID account "
+             "Google Ads (10 cifre). Salva, poi usa il pulsante 'Autorizza con Google' più sotto "
+             "per completare il consenso OAuth. Verifica prima, nello stesso progetto Cloud "
+             "(API e servizi → Google Ads API → Livelli di accesso), di avere almeno il livello "
+             "'Explorer' (di norma automatico): dà già accesso all'account reale. Account "
+             "singolo: non supporta un manager account (MCC) con più account.",
     ),
     ServerType(
         key="custom",

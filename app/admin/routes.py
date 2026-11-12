@@ -134,7 +134,6 @@ async def save_server(
     meta_pages: str = Form(""),
     google_ads_client_id: str = Form(""),
     google_ads_client_secret: str = Form(""),
-    google_ads_developer_token: str = Form(""),
     google_ads_customer_id: str = Form(""),
     user: str = Depends(require_login),
 ):
@@ -191,8 +190,10 @@ async def save_server(
     if server_type.key == "google_ads":
         env_dict["GOOGLE_ADS_CLIENT_ID"] = google_ads_client_id.strip()
         env_dict["GOOGLE_ADS_CLIENT_SECRET"] = google_ads_client_secret.strip()
-        env_dict["GOOGLE_ADS_DEVELOPER_TOKEN"] = google_ads_developer_token.strip()
         env_dict["GOOGLE_ADS_CUSTOMER_ID"] = google_ads_customer_id.strip()
+        # GOOGLE_ADS_DEVELOPER_TOKEN non ha un campo dedicato (facoltativo dal 9/2026, vedi
+        # google_ads_server.py): chi lo vuole impostare lo scrive in "Env extra (JSON)", che
+        # non va sovrascritto qui.
 
     store.upsert_server(build(env_dict, has_credentials))
     return RedirectResponse("/", status_code=303)

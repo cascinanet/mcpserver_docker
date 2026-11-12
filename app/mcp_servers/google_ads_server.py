@@ -5,12 +5,16 @@ L'autenticazione è OAuth 2.0: il token non è una credenziale statica, ma letto
 salvato dal flusso di autorizzazione dell'hub (app/google_ads_oauth.py, pulsante "Autorizza
 con Google" nel form del server) — DATA_DIR/creds/<server_id>-google_ads.json.
 
-IMPORTANTE — Developer Token: ogni chiamata richiede anche l'header 'developer-token'
-(DATA_DIR/creds non c'entra, è una credenziale a parte, non OAuth). Un token appena creato ha
-livello **Basic**: funziona SOLO su account Google Ads di test (creati da Google Ads →
-Strumenti → Centro API → "Crea account di test"), non sul vostro account vero. Per l'account
-reale serve il livello **Standard**, che richiede una richiesta approvata da Google (giorni,
-non immediata) — vedi sezione dedicata nel README.
+Dal 9 settembre 2026 Google ha ritirato il vecchio "Centro API" di Google Ads (che rilasciava
+il Developer Token e il livello Basic/Standard legato ad esso): l'accesso ora appartiene al
+**progetto Google Cloud** dello stesso Client OAuth usato qui (livelli Test → Explorer → Basic
+→ Standard, gestiti da Google Cloud Console → API e servizi → Google Ads API → Livelli di
+accesso). Il livello **Explorer** basta già per un account di produzione con un tetto
+giornaliero di operazioni adeguato a un uso conversazionale. L'header HTTP 'developer-token'
+resta accettato per compatibilità con le integrazioni più vecchie, ma Google lo ignora: qui è
+facoltativo, e se non impostato non viene inviato. Google ha annunciato che lo rifiuterà del
+tutto in una futura versione major dell'API — se succede, basterà togliere la variabile
+d'ambiente, nessun'altra modifica dovrebbe servire.
 
 Questo server esegue anche operazioni di scrittura (pausa/attiva campagna, cambio budget):
 spendono o risparmiano soldi veri sull'account collegato. Non c'è una doppia conferma
@@ -20,7 +24,7 @@ prima di eseguirli), come per qualunque azione che muove denaro reale.
 Configurazione (env):
     GOOGLE_ADS_CLIENT_ID        obbligatoria: OAuth client ID (Google Cloud Console)
     GOOGLE_ADS_CLIENT_SECRET    obbligatoria: OAuth client secret
-    GOOGLE_ADS_DEVELOPER_TOKEN  obbligatoria: Developer Token (Google Ads → Centro API)
+    GOOGLE_ADS_DEVELOPER_TOKEN  facoltativa: solo per compatibilità, Google la ignora dal 9/2026
     GOOGLE_ADS_CUSTOMER_ID      obbligatoria: ID account Google Ads, 10 cifre senza trattini
     GOOGLE_ADS_API_VERSION      opzionale: versione API (es. 'v23'), default in questo file
     DATA_DIR                    ereditata dall'hub, usata per individuare il file token
@@ -80,10 +84,9 @@ def _customer_id() -> str:
 
 
 def _developer_token() -> str:
-    token = os.environ.get("GOOGLE_ADS_DEVELOPER_TOKEN", "").strip()
-    if not token:
-        raise ConfigError("Configurazione incompleta: manca GOOGLE_ADS_DEVELOPER_TOKEN.")
-    return token
+    """Facoltativo dal 9/2026 (vedi docstring del modulo): stringa vuota se non impostato,
+    così _headers() può semplicemente ometterne l'header invece di bloccare ogni chiamata."""
+    return os.environ.get("GOOGLE_ADS_DEVELOPER_TOKEN", "").strip()
 
 
 async def _get_access_token() -> str:
@@ -112,11 +115,11 @@ async def _get_access_token() -> str:
 
 
 def _headers(token: str) -> dict:
-    return {
-        "Authorization": f"Bearer {token}",
-        "developer-token": _developer_token(),
-        "Content-Type": "application/json",
-    }
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    developer_token = _developer_token()
+    if developer_token:
+        headers["developer-token"] = developer_token
+    return headers
 
 
 def _extract_error_message(resp: httpx.Response) -> str:

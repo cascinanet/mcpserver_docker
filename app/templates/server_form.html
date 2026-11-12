@@ -103,21 +103,22 @@
              value="{{ server.env.get('GOOGLE_ADS_CLIENT_SECRET', '') if server else '' }}"
              placeholder="dalla stessa schermata del Client ID">
 
-      <label>Developer Token (Google Ads → Strumenti → Centro API)</label>
-      <input type="text" name="google_ads_developer_token"
-             value="{{ server.env.get('GOOGLE_ADS_DEVELOPER_TOKEN', '') if server else '' }}"
-             placeholder="es. AbCdEfGhIjKlMnOpQrStUv">
-
       <label>ID account Google Ads (10 cifre, con o senza trattini)</label>
       <input type="text" name="google_ads_customer_id"
              value="{{ server.env.get('GOOGLE_ADS_CUSTOMER_ID', '') if server else '' }}"
              placeholder="es. 123-456-7890">
       <p class="muted" style="margin:6px 0 0;">
         Account singolo: questo tipo non supporta un manager account (MCC) con più account
-        sotto. Un Developer Token appena creato è di livello <strong>Basic</strong> e funziona
-        solo su account Google Ads di test: per l'account reale serve il livello
-        <strong>Standard</strong>, da richiedere nello stesso Centro API (approvazione non
-        immediata).
+        sotto. Dal 9/2026 l'accesso dipende dal livello del progetto Google Cloud dello stesso
+        Client OAuth (Google Cloud Console → API e servizi → Google Ads API → Livelli di
+        accesso): il livello <strong>Explorer</strong>, di norma assegnato in automatico, basta
+        già per l'account reale.
+      </p>
+      <p class="muted" style="margin:6px 0 0;">
+        Per opzioni avanzate (<code>GOOGLE_ADS_DEVELOPER_TOKEN</code>, facoltativo e ignorato da
+        Google dal 9/2026, solo per compatibilità con integrazioni più vecchie;
+        <code>GOOGLE_ADS_API_VERSION</code> se la versione di default viene dismessa) usa il
+        campo "Env extra (JSON)" nelle Impostazioni tecniche.
       </p>
     </div>
 
