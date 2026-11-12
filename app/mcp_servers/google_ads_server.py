@@ -162,13 +162,17 @@ def _raise_for_error(resp: httpx.Response, azione: str) -> dict:
         return {}
 
 
-async def _search(query: str, page_size: int = 200) -> list[dict]:
+async def _search(query: str) -> list[dict]:
     """Esegue una query GAQL (Google Ads Query Language) e restituisce i risultati della
-    prima pagina. Non pagina oltre: adeguato per un uso conversazionale su un account singolo,
-    non per estrarre l'intero storico di un account grande."""
+    prima pagina. Nessun parametro di pageSize: nelle versioni recenti dell'API Google Ads
+    non è più supportato ("Setting the page size is not supported", riprodotto dal vivo), la
+    pagina ha dimensione fissa (10.000 righe). Per limitare le righe usa 'LIMIT n' nella query
+    GAQL stessa, non un parametro della richiesta. Non pagina oltre la prima: adeguato per un
+    uso conversazionale su un account singolo, non per estrarre l'intero storico di un account
+    grande (oltre 10.000 righe servirebbe implementare 'pageToken', non ancora fatto)."""
     resp = await _request(
         "POST", f"customers/{_customer_id()}/googleAds:search",
-        json={"query": query, "pageSize": page_size},
+        json={"query": query},
     )
     data = _raise_for_error(resp, "eseguendo la query")
     return data.get("results", [])
@@ -210,7 +214,7 @@ async def _elenco_campagne(stato: str | None) -> dict:
     rows = await _search(
         "SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, "
         "campaign_budget.amount_micros, metrics.cost_micros, metrics.clicks, metrics.impressions, "
-        "metrics.conversions FROM campaign" + where + " ORDER BY campaign.id"
+        "metrics.conversions FROM campaign" + where + " ORDER BY campaign.id LIMIT 500"
     )
     return {
         "campagne": [

@@ -340,7 +340,11 @@ Tool esposti: `elenco_campagne`, `report_performance`, `metti_in_pausa_campagna`
   Per un periodo diverso usa `report_performance` con `data_da`/`data_a`.
 - **Non pagina oltre la prima pagina dei risultati**: adeguato per un uso conversazionale su
   un account singolo; non pensato per estrarre l'intero storico di un account con migliaia di
-  campagne/parole chiave.
+  campagne/parole chiave. Le versioni recenti dell'API hanno una dimensione di pagina fissa
+  (10.000 righe) e non accettano più un parametro per cambiarla — riprodotto dal vivo
+  ("Setting the page size is not supported"): le righe si limitano con `LIMIT n` nella query
+  GAQL stessa (già fatto in `report_performance` ed `elenco_campagne`), non con un parametro
+  della richiesta.
 - **Versione API**: ogni chiamata usa la Google Ads API `v25` di default. Dal 2026 Google
   rilascia una versione al mese (presto due) e ne ritira una dopo pochi mesi, non più dopo un
   anno come in passato — riprodotto dal vivo: `v22` era già dismessa un mese dopo il suo
