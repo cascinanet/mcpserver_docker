@@ -321,7 +321,8 @@ facoltativo (vedi sotto).
    giorni spiegato sopra), va rifatto il consenso dal pulsante.
 
 Tool esposti: `elenco_campagne`, `report_performance`, `metti_in_pausa_campagna`,
-`attiva_campagna`, `modifica_budget_campagna`.
+`attiva_campagna`, `modifica_budget_campagna`, `idee_parole_chiave`,
+`metriche_storiche_parole_chiave` (Keyword Planner).
 
 - **Azioni che spendono soldi veri**: `metti_in_pausa_campagna`, `attiva_campagna` e
   `modifica_budget_campagna` agiscono subito sull'account reale, senza una doppia conferma
@@ -365,6 +366,18 @@ Tool esposti: `elenco_campagne`, `report_performance`, `metti_in_pausa_campagna`
   affatto, invece di bloccare ogni chiamata come faceva il codice prima di questa scoperta.
 - **Token mai in chiaro nei log**: mascherati (`***`) sia negli errori del server sia (access
   token, refresh token, client secret, developer token) in ogni messaggio d'errore restituito.
+- **Keyword Planner** (`idee_parole_chiave`, `metriche_storiche_parole_chiave`): usa
+  `KeywordPlanIdeaService` — a differenza dei tool sopra, l'endpoint non è
+  `customers/{id}/googleAds:...` ma `customers/{id}:generateKeywordIdeas` /
+  `:generateKeywordHistoricalMetrics` direttamente sulla risorsa cliente. Lingua e paese di
+  default sono italiano (`languageConstants/1004`) e Italia (`geoTargetConstants/2380`),
+  sovrascrivibili per chiamata con i parametri `lingua`/`paese` (quest'ultimo accetta anche più
+  ID separati da virgola). **Il livello di accesso Explorer potrebbe non bastare** per questo
+  servizio (a differenza delle query di report/gestione campagne, già verificate con Explorer):
+  se Google risponde con un errore di permessi, va controllato/alzato il livello in Google
+  Cloud Console. Il nome del campo delle metriche in `metriche_storiche_parole_chiave` non è
+  verificato dal vivo (la documentazione ufficiale non mostra un esempio di risposta completo):
+  il codice prova `keywordMetrics` prima di `keywordIdeaMetrics`, da controllare al primo uso.
 - **Non ancora verificato dal vivo**: nessun account Google Ads disponibile al momento di
   scrivere questo codice. Scritto secondo la documentazione ufficiale della Google Ads API
   (GAQL via `googleAds:search`, mutate via `campaigns:mutate`/`campaignBudgets:mutate`), da

@@ -348,6 +348,92 @@ async def _modifica_budget_campagna(campagna: str, nuovo_budget_giornaliero: flo
     return {"ok": True, "campagna": info["name"], "nuovo_budget_giornaliero": nuovo_budget_giornaliero}
 
 
+# Keyword Planner (KeywordPlanIdeaService): non verificato dal vivo (nessun account con questo
+# servizio disponibile al momento di scrivere il codice). A differenza delle query GAQL sopra,
+# qui l'endpoint non è 'customers/{id}/googleAds:...' ma 'customers/{id}:nomeMetodo' diretto —
+# verificato sulla documentazione ufficiale, non assunto dalla memoria (lezione delle scoperte
+# precedenti su questo stesso connettore). Il livello di accesso 'Explorer' del progetto
+# potrebbe non bastare per questo servizio: se Google risponde con un errore di permessi, va
+# controllato/alzato il livello in Google Cloud Console (stessa pagina già usata per Explorer).
+DEFAULT_LANGUAGE_ID = "1004"  # italiano
+DEFAULT_GEO_ID = "2380"  # Italia
+
+
+def _language_resource(lingua: str | None) -> str:
+    value = (lingua or DEFAULT_LANGUAGE_ID).strip()
+    return value if value.startswith("languageConstants/") else f"languageConstants/{value}"
+
+
+def _geo_resources(paese: str | None) -> list[str]:
+    raw = (paese or DEFAULT_GEO_ID).strip()
+    ids = [p.strip() for p in raw.split(",") if p.strip()]
+    return [p if p.startswith("geoTargetConstants/") else f"geoTargetConstants/{p}" for p in ids]
+
+
+def _keyword_metrics(metrics: dict | None) -> dict:
+    metrics = metrics or {}
+    return {
+        "ricerche_medie_mensili": metrics.get("avgMonthlySearches"),
+        "concorrenza": metrics.get("competition"),
+        "indice_concorrenza": metrics.get("competitionIndex"),
+        "cpc_min": _micros_to_unit(metrics.get("lowTopOfPageBidMicros")),
+        "cpc_max": _micros_to_unit(metrics.get("highTopOfPageBidMicros")),
+    }
+
+
+async def _idee_parole_chiave(parole_chiave: list[str] | None, url: str | None, lingua: str | None, paese: str | None, limite: int) -> dict:
+    parole_chiave = [p.strip() for p in (parole_chiave or []) if p and p.strip()]
+    url = (url or "").strip() or None
+    if not parole_chiave and not url:
+        raise ValueError("Specifica almeno 'parole_chiave' o 'url' da cui partire.")
+    limite = max(1, min(limite or 50, 200))
+
+    body = {"language": _language_resource(lingua), "geoTargetConstants": _geo_resources(paese)}
+    if parole_chiave and url:
+        body["keywordAndUrlSeed"] = {"url": url, "keywords": parole_chiave}
+    elif parole_chiave:
+        body["keywordSeed"] = {"keywords": parole_chiave}
+    else:
+        body["urlSeed"] = {"url": url}
+
+    resp = await _request("POST", f"customers/{_customer_id()}:generateKeywordIdeas", json=body)
+    data = _raise_for_error(resp, "generando idee di parole chiave")
+    results = data.get("results", [])[:limite]
+    return {
+        "idee": [
+            {"parola_chiave": r.get("text"), **_keyword_metrics(r.get("keywordIdeaMetrics"))}
+            for r in results
+        ],
+        "totale_disponibile": len(data.get("results", [])),
+        "mostrate": len(results),
+    }
+
+
+async def _metriche_storiche_parole_chiave(parole_chiave: list[str], lingua: str | None, paese: str | None) -> dict:
+    parole_chiave = [p.strip() for p in (parole_chiave or []) if p and p.strip()]
+    if not parole_chiave:
+        raise ValueError("Specifica almeno una parola chiave in 'parole_chiave'.")
+    body = {
+        "language": _language_resource(lingua),
+        "geoTargetConstants": _geo_resources(paese),
+        "keywords": parole_chiave,
+    }
+    resp = await _request("POST", f"customers/{_customer_id()}:generateKeywordHistoricalMetrics", json=body)
+    data = _raise_for_error(resp, "leggendo le metriche storiche")
+    return {
+        "parole_chiave": [
+            {
+                "parola_chiave": r.get("text"),
+                # Nome campo non verificato dal vivo: la documentazione ufficiale non mostra un
+                # esempio di risposta completo. Prova 'keywordMetrics' prima di 'keywordIdeaMetrics'
+                # (quest'ultimo è il nome confermato per generateKeywordIdeas, non per questo metodo).
+                **_keyword_metrics(r.get("keywordMetrics") or r.get("keywordIdeaMetrics")),
+            }
+            for r in data.get("results", [])
+        ],
+    }
+
+
 TOOLS = [
     types.Tool(
         name="elenco_campagne",
@@ -403,6 +489,33 @@ TOOLS = [
             },
         },
     ),
+    types.Tool(
+        name="idee_parole_chiave",
+        description="Keyword Planner: idee di parole chiave a partire da parole seme e/o un URL, con volume di ricerca medio mensile, concorrenza e fascia di CPC.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "parole_chiave": {"type": "array", "items": {"type": "string"}, "description": "Parole/frasi seme da cui generare idee. Almeno una tra questa e 'url'."},
+                "url": {"type": "string", "description": "Pagina da cui generare idee (in alternativa o in aggiunta a 'parole_chiave')."},
+                "lingua": {"type": "string", "description": "ID o resource name languageConstants (default: italiano, 1004)."},
+                "paese": {"type": "string", "description": "ID o resource name geoTargetConstants, anche più di uno separati da virgola (default: Italia, 2380)."},
+                "limite": {"type": "integer", "description": "Numero massimo di idee da restituire (default 50, max 200)."},
+            },
+        },
+    ),
+    types.Tool(
+        name="metriche_storiche_parole_chiave",
+        description="Keyword Planner: volume di ricerca e trend per un elenco di parole chiave già note.",
+        inputSchema={
+            "type": "object",
+            "required": ["parole_chiave"],
+            "properties": {
+                "parole_chiave": {"type": "array", "items": {"type": "string"}, "description": "Elenco di parole chiave da interrogare."},
+                "lingua": {"type": "string", "description": "ID o resource name languageConstants (default: italiano, 1004)."},
+                "paese": {"type": "string", "description": "ID o resource name geoTargetConstants, anche più di uno separati da virgola (default: Italia, 2380)."},
+            },
+        },
+    ),
 ]
 
 _DISPATCH = {
@@ -411,6 +524,8 @@ _DISPATCH = {
     "metti_in_pausa_campagna": lambda a: _metti_in_pausa_campagna(a.get("campagna", "")),
     "attiva_campagna": lambda a: _attiva_campagna(a.get("campagna", "")),
     "modifica_budget_campagna": lambda a: _modifica_budget_campagna(a.get("campagna", ""), a.get("nuovo_budget_giornaliero")),
+    "idee_parole_chiave": lambda a: _idee_parole_chiave(a.get("parole_chiave"), a.get("url"), a.get("lingua"), a.get("paese"), a.get("limite")),
+    "metriche_storiche_parole_chiave": lambda a: _metriche_storiche_parole_chiave(a.get("parole_chiave"), a.get("lingua"), a.get("paese")),
 }
 
 
