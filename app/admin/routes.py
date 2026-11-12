@@ -196,6 +196,13 @@ async def save_server(
         # non va sovrascritto qui.
 
     store.upsert_server(build(env_dict, has_credentials))
+    # Il processo "caldo" già in pool per questo server (se esiste) ha letto l'ambiente al suo
+    # avvio: senza chiuderlo qui, continuerebbe a girare con l'env/comando precedenti nonostante
+    # il salvataggio, finché non si riavvia l'intero container. Riprodotto dal vivo: un cambio
+    # di GOOGLE_ADS_API_VERSION salvato nel form non aveva alcun effetto finché il pool non è
+    # stato chiuso. Il prossimo utilizzo del server riparte da zero con la configurazione nuova
+    # (leggermente più lento una volta sola, poi il pool si riscalda di nuovo da sé).
+    await manager.close_server_pool(server_id)
     return RedirectResponse("/", status_code=303)
 
 
