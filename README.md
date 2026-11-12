@@ -341,9 +341,13 @@ Tool esposti: `elenco_campagne`, `report_performance`, `metti_in_pausa_campagna`
 - **Non pagina oltre la prima pagina dei risultati**: adeguato per un uso conversazionale su
   un account singolo; non pensato per estrarre l'intero storico di un account con migliaia di
   campagne/parole chiave.
-- **Versione API**: ogni chiamata usa la Google Ads API `v22` di default. Google rilascia una
-  versione al mese e ne ritira una ogni circa un anno; per aggiornarla senza rilasciare codice
-  imposta `GOOGLE_ADS_API_VERSION` (es. `v24`) nelle Env extra del server.
+- **Versione API**: ogni chiamata usa la Google Ads API `v25` di default. Dal 2026 Google
+  rilascia una versione al mese (presto due) e ne ritira una dopo pochi mesi, non più dopo un
+  anno come in passato — riprodotto dal vivo: `v22` era già dismessa un mese dopo il suo
+  rilascio. Quando la default smette di funzionare, l'errore lo dice esplicitamente
+  ("Version vNN is deprecated"): aggiorna `GOOGLE_ADS_API_VERSION` nelle Env extra del server
+  con la versione indicata nel messaggio o in una più recente, senza bisogno di un rilascio di
+  codice né di riavviare il container.
 - **`GOOGLE_ADS_DEVELOPER_TOKEN` è facoltativa**: retaggio del sistema ritirato il 9/2026 (vedi
   sopra), nessun campo dedicato nel form — si imposta, se proprio serve per un'integrazione più
   vecchia, in "Env extra (JSON)". Se assente, l'header `developer-token` non viene inviato

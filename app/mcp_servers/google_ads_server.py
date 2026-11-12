@@ -59,7 +59,7 @@ logger = logging.getLogger("googleads-mcp")
 # Versione "vNN": Google Ads API rilascia una versione al mese e ritira le vecchie dopo circa
 # un anno. Sovrascrivibile via env GOOGLE_ADS_API_VERSION senza toccare il codice quando questa
 # default va in dismissione (stesso pattern già adottato per LinkedIn e Meta in questo hub).
-API_VERSION = os.environ.get("GOOGLE_ADS_API_VERSION", "").strip() or "v22"
+API_VERSION = os.environ.get("GOOGLE_ADS_API_VERSION", "").strip() or "v25"
 API_BASE = f"https://googleads.googleapis.com/{API_VERSION}"
 MICROS_PER_UNIT = 1_000_000
 _TIMEOUT = 30.0
