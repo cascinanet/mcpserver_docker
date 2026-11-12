@@ -378,6 +378,9 @@ Tool esposti: `elenco_campagne`, `report_performance`, `metti_in_pausa_campagna`
   Cloud Console. Il nome del campo delle metriche in `metriche_storiche_parole_chiave` non è
   verificato dal vivo (la documentazione ufficiale non mostra un esempio di risposta completo):
   il codice prova `keywordMetrics` prima di `keywordIdeaMetrics`, da controllare al primo uso.
+  Entrambi i tool impostano esplicitamente `keywordPlanNetwork: GOOGLE_SEARCH`: senza, il
+  default di Google è "Ricerca + partner", che gonfia i volumi rispetto alla sola Ricerca
+  Google (confermato dalla documentazione ufficiale).
 - **Non ancora verificato dal vivo**: nessun account Google Ads disponibile al momento di
   scrivere questo codice. Scritto secondo la documentazione ufficiale della Google Ads API
   (GAQL via `googleAds:search`, mutate via `campaigns:mutate`/`campaignBudgets:mutate`), da

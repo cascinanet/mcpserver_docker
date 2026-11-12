@@ -388,7 +388,14 @@ async def _idee_parole_chiave(parole_chiave: list[str] | None, url: str | None, 
         raise ValueError("Specifica almeno 'parole_chiave' o 'url' da cui partire.")
     limite = max(1, min(limite or 50, 200))
 
-    body = {"language": _language_resource(lingua), "geoTargetConstants": _geo_resources(paese)}
+    body = {
+        "language": _language_resource(lingua),
+        "geoTargetConstants": _geo_resources(paese),
+        # Senza questo campo Google usa 'Ricerca + partner' di default (volumi gonfiati
+        # rispetto alla sola Ricerca Google, confermato dalla documentazione ufficiale):
+        # forziamo la rete comparabile con una campagna Search tipica.
+        "keywordPlanNetwork": "GOOGLE_SEARCH",
+    }
     if parole_chiave and url:
         body["keywordAndUrlSeed"] = {"url": url, "keywords": parole_chiave}
     elif parole_chiave:
@@ -417,6 +424,9 @@ async def _metriche_storiche_parole_chiave(parole_chiave: list[str], lingua: str
         "language": _language_resource(lingua),
         "geoTargetConstants": _geo_resources(paese),
         "keywords": parole_chiave,
+        # Stesso motivo di _idee_parole_chiave: senza questo campo il default di Google è
+        # 'Ricerca + partner', non la sola Ricerca Google.
+        "keywordPlanNetwork": "GOOGLE_SEARCH",
     }
     resp = await _request("POST", f"customers/{_customer_id()}:generateKeywordHistoricalMetrics", json=body)
     data = _raise_for_error(resp, "leggendo le metriche storiche")
