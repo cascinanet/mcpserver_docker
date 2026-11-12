@@ -91,6 +91,36 @@
       </p>
     </div>
 
+    <!-- Sezione credenziali Google Ads: visibile solo per il tipo 'google_ads'. -->
+    <div id="google-ads-creds-section" style="display:none;">
+      <label>Client ID (OAuth, Google Cloud Console)</label>
+      <input type="text" name="google_ads_client_id"
+             value="{{ server.env.get('GOOGLE_ADS_CLIENT_ID', '') if server else '' }}"
+             placeholder="es. 123456789012-abc...apps.googleusercontent.com">
+
+      <label>Client Secret</label>
+      <input type="text" name="google_ads_client_secret"
+             value="{{ server.env.get('GOOGLE_ADS_CLIENT_SECRET', '') if server else '' }}"
+             placeholder="dalla stessa schermata del Client ID">
+
+      <label>Developer Token (Google Ads → Strumenti → Centro API)</label>
+      <input type="text" name="google_ads_developer_token"
+             value="{{ server.env.get('GOOGLE_ADS_DEVELOPER_TOKEN', '') if server else '' }}"
+             placeholder="es. AbCdEfGhIjKlMnOpQrStUv">
+
+      <label>ID account Google Ads (10 cifre, con o senza trattini)</label>
+      <input type="text" name="google_ads_customer_id"
+             value="{{ server.env.get('GOOGLE_ADS_CUSTOMER_ID', '') if server else '' }}"
+             placeholder="es. 123-456-7890">
+      <p class="muted" style="margin:6px 0 0;">
+        Account singolo: questo tipo non supporta un manager account (MCC) con più account
+        sotto. Un Developer Token appena creato è di livello <strong>Basic</strong> e funziona
+        solo su account Google Ads di test: per l'account reale serve il livello
+        <strong>Standard</strong>, da richiedere nello stesso Centro API (approvazione non
+        immediata).
+      </p>
+    </div>
+
     <!-- Sezione tecnica: comando/argomenti/env. Per i tipi predefiniti è collassata. -->
     <details id="tech-section" {% if not server or server.type == 'custom' %}open{% endif %} style="margin-top:14px;">
       <summary class="muted" style="cursor:pointer;">Impostazioni tecniche (comando, argomenti, env)</summary>
@@ -214,6 +244,46 @@
     </p>
   </div>
   {% endif %}
+
+  {% if server and server.type == 'google_ads' %}
+  <div style="margin-top:14px; padding-top:14px; border-top:1px solid var(--border);">
+    <strong>Autorizzazione Google Ads</strong>
+    <p class="muted" style="margin:6px 0 12px;">
+      {% if request.query_params.get('google_ads_authorized') %}
+        ✅ Autorizzazione completata.
+      {% endif %}
+      {% if google_ads_status and google_ads_status.authorized %}
+        {% if google_ads_status.expired %}
+          <span class="pill danger">token scaduto</span> — prova a rifare l'autorizzazione, oppure attendi il
+          rinnovo automatico (gira ogni 15 minuti).
+        {% else %}
+          <span class="pill on">autorizzato</span>
+        {% endif %}
+      {% else %}
+        <span class="pill off">non ancora autorizzato</span> — richiesto prima di poter usare i tool.
+      {% endif %}
+    </p>
+    <div style="display:flex; gap:10px; align-items:center;">
+      <a class="btn secondary" href="/servers/{{ server.id }}/google_ads/authorize">
+        {{ 'Ri-autorizza con Google' if (google_ads_status and google_ads_status.authorized) else 'Autorizza con Google' }}
+      </a>
+      {% if google_ads_status and google_ads_status.authorized %}
+      <form method="post" action="/servers/{{ server.id }}/google_ads/deauthorize" style="display:inline;"
+            onsubmit="return confirm('Revocare l\'autorizzazione? Il server smetterà di funzionare finché non rifai il consenso.');">
+        <button class="btn danger" type="submit">Revoca autorizzazione</button>
+      </form>
+      {% endif %}
+    </div>
+    <p class="muted" style="margin-top:10px;">
+      Richiede di aver compilato Client ID e Client Secret qui sopra e salvato. Il redirect URI
+      da registrare nel Client OAuth (Google Cloud Console → API e servizi → Credenziali →
+      questo Client ID → "URI di reindirizzamento autorizzati") è
+      <code>{{ google_ads_redirect_uri }}</code>. Se la schermata di consenso OAuth resta in
+      stato "Testing", l'autorizzazione smette di funzionare dopo 7 giorni: portala in
+      "In produzione" per evitarlo (vedi README).
+    </p>
+  </div>
+  {% endif %}
 </div>
 
 <script>
@@ -224,6 +294,7 @@
   const credsSection = document.getElementById('creds-section');
   const linkedinSection = document.getElementById('linkedin-creds-section');
   const metaSection = document.getElementById('meta-creds-section');
+  const googleAdsSection = document.getElementById('google-ads-creds-section');
   const cmd = document.getElementById('command-input');
   const args = document.getElementById('args-input');
   const envInput = document.getElementById('env-input');
@@ -236,6 +307,7 @@
     credsSection.style.display = (t.credential_kind === 'google_service_account') ? 'block' : 'none';
     linkedinSection.style.display = (t.key === 'linkedin') ? 'block' : 'none';
     metaSection.style.display = (t.key === 'meta') ? 'block' : 'none';
+    googleAdsSection.style.display = (t.key === 'google_ads') ? 'block' : 'none';
     // Pre-compila comando/argomenti/env dal template solo quando si cambia tipo
     // (non in modifica al primo caricamento, per non sovrascrivere i valori salvati).
     if (prefillTech) {

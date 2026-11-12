@@ -60,6 +60,7 @@ Definiti in [app/mcp/catalog.py](app/mcp/catalog.py). Aggiungere un tipo = aggiu
 | `woocommerce` | `python3 -m app.mcp_servers.woocommerce_server` | `WC_SITE_URL`, `WC_CONSUMER_KEY`, `WC_CONSUMER_SECRET` (+ opzionali `WC_APP_USER`/`WC_APP_PASSWORD`) | vedi sotto |
 | `linkedin` | `python3 -m app.mcp_servers.linkedin_server` | `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET`, `LINKEDIN_ORG_ID` + autorizzazione OAuth (vedi sotto) | pubblica/gestisce post sulla Pagina aziendale |
 | `meta` | `python3 -m app.mcp_servers.meta_server` | `META_APP_ID`, `META_APP_SECRET` + autorizzazione OAuth (vedi sotto) | pubblica/gestisce post su Pagine Facebook e account Instagram Business collegati |
+| `google_ads` | `python3 -m app.mcp_servers.google_ads_server` | `GOOGLE_ADS_CLIENT_ID`, `GOOGLE_ADS_CLIENT_SECRET`, `GOOGLE_ADS_DEVELOPER_TOKEN`, `GOOGLE_ADS_CUSTOMER_ID` + autorizzazione OAuth (vedi sotto) | report e gestione campagne (pausa/attiva, budget) su un account Google Ads |
 | `custom` | manuale | — | qualsiasi server MCP stdio |
 
 ### SQLite cifrato (SQLCipher)
@@ -269,6 +270,83 @@ Tool esposti: `crea_post_facebook`, `elenco_post_facebook`, `crea_post_instagram
 - **Scope OAuth**: di default `pages_show_list pages_read_engagement pages_manage_posts
   business_management instagram_basic instagram_content_publish`. Sovrascrivibili con
   `META_SCOPES` nelle Env extra.
+
+### Google Ads (report e gestione campagne)
+
+Server MCP custom incluso nel repo ([app/mcp_servers/google_ads_server.py](app/mcp_servers/google_ads_server.py))
+per leggere report di rendimento e gestire campagne (pausa/attiva, cambio budget) su **un
+singolo account** Google Ads, via **Google Ads API**. Come LinkedIn e Meta, l'autenticazione è
+**OAuth 2.0**; a differenza di questi, serve anche una seconda credenziale indipendente dalla
+app OAuth — il **Developer Token** — e l'account deve essere singolo: questo tipo **non
+supporta un manager account (MCC)** con più account clienti sotto.
+
+**Developer Token: il punto che blocca quasi tutti al primo tentativo.** Un token appena
+creato è di livello **Basic**: funziona *solo* su account Google Ads di test (creati da Google
+Ads → Strumenti → Centro API → "Crea account di test", senza spesa reale), **non** sul vostro
+account vero. Per l'account reale serve il livello **Standard**, che va richiesto nello stesso
+Centro API e passa da un'approvazione di Google (giorni, non immediata, come la Community
+Management API di LinkedIn). Prova prima su un account di test per verificare che il
+collegamento funzioni, mentre la richiesta Standard è in corso.
+
+**Setup lato Google** (esterno all'hub, richiede tempo):
+1. Su [Google Cloud Console](https://console.cloud.google.com/), crea (o riusa) un progetto,
+   abilita la **Google Ads API**, poi crea un **Client ID OAuth** di tipo *Applicazione web*
+   (API e servizi → Credenziali). Aggiungi tra gli **URI di reindirizzamento autorizzati**
+   l'URL `<PUBLIC_BASE_URL>/oauth/google_ads/callback`
+   (es. `https://servermcp.cascinanet.it/oauth/google_ads/callback`).
+2. Nella **schermata di consenso OAuth** dello stesso progetto, porta lo stato da *Testing* a
+   **In produzione**. Lo scope richiesto (`.../auth/adwords`) è "sensibile": in stato *Testing*
+   Google invalida il refresh token dopo **7 giorni**, rompendo l'autorizzazione a ripetizione.
+   Passare a "In produzione" con uno scope sensibile può richiedere una verifica di Google
+   (più veloce se l'app resta a uso interno con pochi utenti, ma non istantanea).
+3. Su [Google Ads](https://ads.google.com/) → Strumenti e impostazioni → **Centro API**, genera
+   il **Developer Token** (livello Basic subito; richiedi lo **Standard** per l'account reale,
+   vedi sopra).
+4. Prendi l'**ID cliente** dell'account Google Ads (in alto a destra nell'interfaccia, formato
+   `123-456-7890`): è il `GOOGLE_ADS_CUSTOMER_ID`.
+
+**Setup lato hub**:
+1. Crea il server, tipo **Google Ads** → in Env imposta `GOOGLE_ADS_CLIENT_ID`,
+   `GOOGLE_ADS_CLIENT_SECRET`, `GOOGLE_ADS_DEVELOPER_TOKEN`, `GOOGLE_ADS_CUSTOMER_ID` → Salva.
+2. Clicca **"Autorizza con Google"**: reindirizza al consenso OAuth, poi torna automaticamente
+   al pannello con l'esito.
+3. A differenza di Meta, Google usa un refresh token classico che non va ri-esteso
+   periodicamente: un task in background rinnova solo l'access token (dura ~1 ora) ogni 15
+   minuti. Se il refresh token stesso non è più valido (revocato, o scaduto per il limite dei 7
+   giorni spiegato sopra), va rifatto il consenso dal pulsante.
+
+Tool esposti: `elenco_campagne`, `report_performance`, `metti_in_pausa_campagna`,
+`attiva_campagna`, `modifica_budget_campagna`.
+
+- **Azioni che spendono soldi veri**: `metti_in_pausa_campagna`, `attiva_campagna` e
+  `modifica_budget_campagna` agiscono subito sull'account reale, senza una doppia conferma
+  applicativa nel tool stesso — la cautela va esercitata da chi li invoca (conferma esplicita
+  dall'utente prima di eseguirli), come per qualunque azione che muove denaro reale.
+- **Campagna indicata per ID o per nome**: tutti i tool che operano su una campagna accettano
+  l'ID numerico o il nome (anche parziale, case-insensitive). Più campagne corrispondono allo
+  stesso nome parziale → errore con l'elenco, invece di agire su quella sbagliata: usa l'ID per
+  essere univoco.
+- **Account singolo, non MCC**: `GOOGLE_ADS_CUSTOMER_ID` è un solo account. Per gestire più
+  account clienti sotto un manager account servirebbe l'header `login-customer-id` e una
+  selezione tra più account, non ancora implementati (stesso tipo di estensione già fatta per
+  le più Pagine di LinkedIn/Meta — se serve, si aggiunge).
+- **Metriche senza periodo esplicito**: `elenco_campagne` mostra sempre gli ultimi 7 giorni
+  (comportamento di default della Google Ads API quando la query non specifica un intervallo).
+  Per un periodo diverso usa `report_performance` con `data_da`/`data_a`.
+- **Non pagina oltre la prima pagina dei risultati**: adeguato per un uso conversazionale su
+  un account singolo; non pensato per estrarre l'intero storico di un account con migliaia di
+  campagne/parole chiave.
+- **Versione API**: ogni chiamata usa la Google Ads API `v22` di default. Google rilascia una
+  versione al mese e ne ritira una ogni circa un anno; per aggiornarla senza rilasciare codice
+  imposta `GOOGLE_ADS_API_VERSION` (es. `v24`) nelle Env extra del server.
+- **Token mai in chiaro nei log**: mascherati (`***`) sia negli errori del server sia (access
+  token, refresh token, client secret, developer token) in ogni messaggio d'errore restituito.
+- **Non ancora verificato dal vivo**: nessun account Google Ads disponibile al momento di
+  scrivere questo codice. Scritto secondo la documentazione ufficiale della Google Ads API
+  (GAQL via `googleAds:search`, mutate via `campaigns:mutate`/`campaignBudgets:mutate`), da
+  controllare al primo uso reale — in particolare i nomi dei campi nella risposta JSON REST
+  (camelCase, es. `advertisingChannelType`) e il messaggio d'errore quando il Developer Token
+  è ancora di livello Basic.
 
 ## Struttura
 

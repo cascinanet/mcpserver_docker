@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from app import backup as backup_mod
 from app import linkedin_oauth
 from app import meta_oauth
+from app import google_ads_oauth
 from app import runtime
 from app.auth import security
 from app.auth.dependencies import require_login
@@ -39,6 +40,7 @@ def _form_context(request: Request, user: str, server: MCPServer | None, error: 
         server_types.append(data)
     linkedin_status = linkedin_oauth.status(server.id) if server and server.type == "linkedin" else None
     meta_status = meta_oauth.status(server.id) if server and server.type == "meta" else None
+    google_ads_status = google_ads_oauth.status(server.id) if server and server.type == "google_ads" else None
     return {
         "request": request,
         "user": user,
@@ -50,6 +52,8 @@ def _form_context(request: Request, user: str, server: MCPServer | None, error: 
         "linkedin_redirect_uri": f"{_public_base_url(request)}/oauth/linkedin/callback",
         "meta_status": meta_status,
         "meta_redirect_uri": f"{_public_base_url(request)}/oauth/meta/callback",
+        "google_ads_status": google_ads_status,
+        "google_ads_redirect_uri": f"{_public_base_url(request)}/oauth/google_ads/callback",
     }
 
 
@@ -128,6 +132,10 @@ async def save_server(
     meta_app_id: str = Form(""),
     meta_app_secret: str = Form(""),
     meta_pages: str = Form(""),
+    google_ads_client_id: str = Form(""),
+    google_ads_client_secret: str = Form(""),
+    google_ads_developer_token: str = Form(""),
+    google_ads_customer_id: str = Form(""),
     user: str = Depends(require_login),
 ):
     server_id = id.strip()
@@ -180,6 +188,11 @@ async def save_server(
         env_dict["META_APP_ID"] = meta_app_id.strip()
         env_dict["META_APP_SECRET"] = meta_app_secret.strip()
         env_dict["META_PAGES"] = meta_pages.strip()
+    if server_type.key == "google_ads":
+        env_dict["GOOGLE_ADS_CLIENT_ID"] = google_ads_client_id.strip()
+        env_dict["GOOGLE_ADS_CLIENT_SECRET"] = google_ads_client_secret.strip()
+        env_dict["GOOGLE_ADS_DEVELOPER_TOKEN"] = google_ads_developer_token.strip()
+        env_dict["GOOGLE_ADS_CUSTOMER_ID"] = google_ads_customer_id.strip()
 
     store.upsert_server(build(env_dict, has_credentials))
     return RedirectResponse("/", status_code=303)
@@ -328,6 +341,67 @@ async def meta_deauthorize(server_id: str, user: str = Depends(require_login)):
     if not server or server.type != "meta":
         raise HTTPException(status_code=404, detail="Server Meta non trovato.")
     meta_oauth.delete_tokens(server_id)
+    return RedirectResponse(f"/servers/{server_id}/edit", status_code=303)
+
+
+@router.get("/servers/{server_id}/google_ads/authorize")
+async def google_ads_authorize(server_id: str, request: Request, user: str = Depends(require_login)):
+    """Avvia il consenso OAuth: redirige il browser dell'admin a Google."""
+    server = store.get_server(server_id)
+    if not server or server.type != "google_ads":
+        raise HTTPException(status_code=404, detail="Server Google Ads non trovato.")
+    if not server.env.get("GOOGLE_ADS_CLIENT_ID"):
+        raise HTTPException(status_code=400, detail="Imposta prima GOOGLE_ADS_CLIENT_ID nelle Env e salva.")
+    state = google_ads_oauth.make_state(server_id)
+    redirect_uri = f"{_public_base_url(request)}/oauth/google_ads/callback"
+    return RedirectResponse(google_ads_oauth.authorize_url(server, redirect_uri, state))
+
+
+@router.get("/oauth/google_ads/callback", response_class=HTMLResponse)
+async def google_ads_callback(
+    request: Request,
+    code: str = "",
+    state: str = "",
+    error: str = "",
+    error_description: str = "",
+    user: str = Depends(require_login),
+):
+    """Riceve il redirect da Google, scambia il code per access_token + refresh_token e li salva."""
+
+    def _bounce(message: str, server_id: str | None = None, code_status: int = 400):
+        back = f"/servers/{server_id}/edit" if server_id else "/"
+        return HTMLResponse(
+            f"<p>{message}</p><p><a href='{back}'>Torna al pannello</a></p>", status_code=code_status
+        )
+
+    if error:
+        return _bounce(f"Google ha rifiutato l'autorizzazione: {error} — {error_description}")
+
+    server_id = google_ads_oauth.consume_state(state)
+    if not server_id:
+        return _bounce("Sessione di autorizzazione scaduta o non valida (hai impiegato più di 10 minuti, o la pagina è stata aperta due volte). Riprova dal pulsante 'Autorizza con Google'.")
+
+    server = store.get_server(server_id)
+    if not server or server.type != "google_ads":
+        return _bounce("Server Google Ads non trovato.", server_id)
+
+    redirect_uri = f"{_public_base_url(request)}/oauth/google_ads/callback"
+    try:
+        await google_ads_oauth.complete_authorization(server, server_id, code, redirect_uri)
+    except Exception as exc:  # noqa: BLE001
+        return _bounce(f"Scambio del code fallito: {exc}", server_id)
+
+    return RedirectResponse(f"/servers/{server_id}/edit?google_ads_authorized=1", status_code=303)
+
+
+@router.post("/servers/{server_id}/google_ads/deauthorize")
+async def google_ads_deauthorize(server_id: str, user: str = Depends(require_login)):
+    """Elimina il token salvato (revoca locale): il server smetterà di funzionare finché non
+    si rifà il consenso OAuth."""
+    server = store.get_server(server_id)
+    if not server or server.type != "google_ads":
+        raise HTTPException(status_code=404, detail="Server Google Ads non trovato.")
+    google_ads_oauth.delete_tokens(server_id)
     return RedirectResponse(f"/servers/{server_id}/edit", status_code=303)
 
 
