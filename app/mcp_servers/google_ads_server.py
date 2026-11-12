@@ -208,9 +208,17 @@ async def _resolve_campaign(campagna: str) -> dict:
 
 
 async def _elenco_campagne(stato: str | None) -> dict:
-    where = ""
+    # Attenzione: senza un filtro esplicito su segments.date la Google Ads API NON dà gli
+    # ultimi 7 giorni di default, dà i totali di sempre della campagna (riprodotto dal vivo:
+    # una campagna con budget 5€/giorno risultava con 7.015€ di costo "ultimi 7 giorni", e
+    # comparivano campagne REMOVED dal 2018 con spesa). Il filtro va sempre esplicito.
+    condizioni = ["segments.date DURING LAST_7_DAYS"]
     if stato:
-        where = f" WHERE campaign.status = '{stato.strip().upper()}'"
+        condizioni.append(f"campaign.status = '{stato.strip().upper()}'")
+    else:
+        # Default: escludi le campagne rimosse, salvo richiesta esplicita (stato='REMOVED').
+        condizioni.append("campaign.status != 'REMOVED'")
+    where = " WHERE " + " AND ".join(condizioni)
     rows = await _search(
         "SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, "
         "campaign_budget.amount_micros, metrics.cost_micros, metrics.clicks, metrics.impressions, "
@@ -231,8 +239,9 @@ async def _elenco_campagne(stato: str | None) -> dict:
             }
             for r in rows
         ],
-        "nota": "Le metriche si riferiscono agli ultimi 7 giorni (intervallo di default della "
-                "Google Ads API quando la query non specifica un periodo).",
+        "nota": "Le metriche si riferiscono agli ultimi 7 giorni (filtro esplicito "
+                "'segments.date DURING LAST_7_DAYS'). Le campagne rimosse sono escluse di "
+                "default: usa stato='REMOVED' per vederle.",
     }
 
 
@@ -250,15 +259,20 @@ async def _report_performance(livello: str, data_da: str | None, data_a: str | N
     risorsa, campi_dimensione = _LIVELLI[livello]
     limite = max(1, min(limite or 50, 500))
 
-    condizioni = []
+    # Attenzione: senza un filtro esplicito su segments.date la Google Ads API NON dà gli
+    # ultimi 7 giorni di default, dà i totali di sempre (stesso bug riprodotto dal vivo e
+    # corretto in _elenco_campagne, vedi commento lì) — va sempre specificato un periodo.
+    condizioni = ["campaign.status != 'REMOVED'"]
     if data_da and data_a:
         condizioni.append(f"segments.date BETWEEN '{data_da}' AND '{data_a}'")
     elif data_da or data_a:
         raise ValueError("Specifica sia 'data_da' sia 'data_a' (formato YYYY-MM-DD), o nessuno dei due per gli ultimi 7 giorni.")
+    else:
+        condizioni.append("segments.date DURING LAST_7_DAYS")
     if campagna:
         info = await _resolve_campaign(campagna)
         condizioni.append(f"campaign.id = {info['id']}")
-    where = (" WHERE " + " AND ".join(condizioni)) if condizioni else ""
+    where = " WHERE " + " AND ".join(condizioni)
 
     rows = await _search(
         f"SELECT {campi_dimensione}, metrics.impressions, metrics.clicks, metrics.cost_micros, "

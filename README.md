@@ -335,9 +335,16 @@ Tool esposti: `elenco_campagne`, `report_performance`, `metti_in_pausa_campagna`
   account clienti sotto un manager account servirebbe l'header `login-customer-id` e una
   selezione tra più account, non ancora implementati (stesso tipo di estensione già fatta per
   le più Pagine di LinkedIn/Meta — se serve, si aggiunge).
-- **Metriche senza periodo esplicito**: `elenco_campagne` mostra sempre gli ultimi 7 giorni
-  (comportamento di default della Google Ads API quando la query non specifica un intervallo).
-  Per un periodo diverso usa `report_performance` con `data_da`/`data_a`.
+- **Metriche sempre con un periodo esplicito**: `elenco_campagne` e `report_performance`
+  (quando non ricevi `data_da`/`data_a`) filtrano sempre con `segments.date DURING
+  LAST_7_DAYS`. **Attenzione se modifichi il codice**: senza questo filtro la Google Ads API
+  **non** dà gli ultimi 7 giorni di default, dà i totali di sempre della campagna — bug
+  riprodotto dal vivo (una campagna da 5€/giorno risultava con 7.015€ di costo "ultimi 7
+  giorni"; comparivano campagne rimosse dal 2018 con spesa) prima di questa correzione. Per un
+  periodo diverso da 7 giorni usa `report_performance` con `data_da`/`data_a`.
+- **Campagne rimosse escluse di default**: sia `elenco_campagne` sia `report_performance`
+  filtrano `campaign.status != 'REMOVED'` salvo richiesta esplicita (`elenco_campagne` con
+  `stato='REMOVED'`; `report_performance` non ha un parametro per questo, non le mostra mai).
 - **Non pagina oltre la prima pagina dei risultati**: adeguato per un uso conversazionale su
   un account singolo; non pensato per estrarre l'intero storico di un account con migliaia di
   campagne/parole chiave. Le versioni recenti dell'API hanno una dimensione di pagina fissa
